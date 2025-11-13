@@ -13,16 +13,42 @@ const FileStore = FileStoreFactory(session);
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// --- конфиг ---
-const PORT = process.env.PORT || 3000;
-const ADMIN_LOGIN = process.env.ADMIN_LOGIN || 'admin';
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'secret123';
-const SESSION_SECRET = process.env.SESSION_SECRET || 'post-static-secret';
+// ---------- загрузка конфига из репо ----------
+const DEFAULTS = {
+  port: 3000,
+  adminLogin: 'admin',
+  adminPassword: 'secret123',
+  sessionSecret: 'post-static-secret',
+  dataDir: path.join(__dirname, 'data')
+};
 
-// путь к файлу статей: по умолчанию в корне проекта, но можно вынести на диск /data
-const ARTICLES_FILE = process.env.ARTICLES_FILE || path.join(__dirname, 'articles.json');
+let CONFIG = { ...DEFAULTS };
+try {
+  const cfgText = await fs.readFile(path.join(__dirname, 'config.json'), 'utf-8');
+  const userCfg = JSON.parse(cfgText);
+  CONFIG = { ...CONFIG, ...userCfg, dataDir: path.resolve(__dirname, userCfg.dataDir || DEFAULTS.dataDir) };
+} catch {
+  // оставляем дефолт
+}
 
-// --- helpers файла статей ---
+// гарантируем наличие папок и файлов данных
+await fs.mkdir(CONFIG.dataDir, { recursive: true });
+await fs.mkdir(path.join(CONFIG.dataDir, 'sessions'), { recursive: true });
+
+const LEGACY_ARTICLES = path.join(__dirname, 'articles.json'); // на случай, если раньше лежал в корне
+const ARTICLES_FILE = path.join(CONFIG.dataDir, 'articles.json');
+try {
+  await fs.access(ARTICLES_FILE);
+} catch {
+  try {
+    const legacy = await fs.readFile(LEGACY_ARTICLES, 'utf-8');
+    await fs.writeFile(ARTICLES_FILE, legacy, 'utf-8');
+  } catch {
+    await fs.writeFile(ARTICLES_FILE, '[]', 'utf-8');
+  }
+}
+
+// ---------- helpers работы с файлами ----------
 async function loadArticles() {
   try {
     const data = await fs.readFile(ARTICLES_FILE, 'utf-8');
@@ -36,15 +62,13 @@ async function saveArticles(articles) {
   await fs.writeFile(ARTICLES_FILE, JSON.stringify(articles, null, 2), 'utf-8');
 }
 
-// --- парсинг VC.ru ---
+// ---------- парсинг VC.ru ----------
 async function fetchPostStats(url) {
   const res = await fetch(url, {
     headers: {
-      'User-Agent':
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119 Safari/537.36'
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119 Safari/537.36'
     }
   });
-
   if (!res.ok) throw new Error(`Ошибка загрузки: ${res.status}`);
 
   const html = await res.text();
@@ -52,60 +76,56 @@ async function fetchPostStats(url) {
 
   const title = $('h1').first().text().trim() || 'Без названия';
 
-  // дата публикации
   const timeEl = $('.content-header__date time').first();
   const publishedAt = timeEl.attr('datetime') || timeEl.text().trim() || null;
 
-  // доступный на странице счётчик (берём как "открытия")
+  // Доступный на странице счётчик (используем как «открытия»)
   const viewsText = $('.content-footer-button__label').first().text().trim();
   const opens = Number(viewsText.replace(/\s/g, '')) || 0;
 
   return { title, publishedAt, opens };
 }
 
+// ---------- приложение ----------
 const app = express();
 
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// === СЕССИИ (файловый стор, чтобы не было предупреждений и чтобы переживать рестарты) ===
+// Сессии: файловый стор в ./data/sessions (без MemoryStore предупреждений)
 app.use(
   session({
     store: new FileStore({
-      path: process.env.SESSION_DIR || '/data/sessions',
+      path: path.join(CONFIG.dataDir, 'sessions'),
       retries: 1,
       fileExtension: '.json'
     }),
-    secret: SESSION_SECRET,
+    secret: CONFIG.sessionSecret,
     resave: false,
     saveUninitialized: false,
     cookie: {
       maxAge: 7 * 24 * 60 * 60 * 1000,
       sameSite: 'lax',
-      secure: false // на https можно поставить true + app.set('trust proxy', 1)
+      secure: false // под HTTPS можно true + app.set('trust proxy', 1)
     }
   })
 );
 
-// === СТАТИКА: СТАВИМ ДО РОУТОВ И Fallback ===
+// ---------- статика: ВАЖНО — до роутов и fallback ----------
 const publicDir = path.join(__dirname, 'public');
+app.use(express.static(publicDir));              // корень
+app.use('/post-static', express.static(publicDir)); // и под префиксом
 
-// в корне
-app.use(express.static(publicDir));
-// и под префиксом /post-static (если открываешь по такому пути)
-app.use('/post-static', express.static(publicDir));
-
-// --- middleware авторизации ---
-function requireAuth(req, res, next) {
+// ---------- авторизация ----------
+function requireAuth(req, _res, next) {
   if (req.session && req.session.auth) return next();
-  return res.status(401).json({ error: 'Не авторизован' });
+  return next({ status: 401, message: 'Не авторизован' });
 }
 
-// --- AUTH API ---
 app.post('/api/login', (req, res) => {
   const { login, password } = req.body;
-  if (login === ADMIN_LOGIN && password === ADMIN_PASSWORD) {
+  if (login === CONFIG.adminLogin && password === CONFIG.adminPassword) {
     req.session.auth = true;
     return res.json({ ok: true });
   }
@@ -116,18 +136,15 @@ app.post('/api/logout', (req, res) => {
   req.session.destroy(() => res.json({ ok: true }));
 });
 
-// --- ARTICLES API ---
+// ---------- статьи ----------
 app.get('/api/articles', requireAuth, async (_req, res) => {
-  const articles = await loadArticles();
-  res.json(articles);
+  res.json(await loadArticles());
 });
 
 app.post('/api/articles', requireAuth, async (req, res) => {
   try {
     const { url, cost } = req.body;
-    if (!url || !url.startsWith('http')) {
-      return res.status(400).json({ error: 'Неверная ссылка' });
-    }
+    if (!url || !url.startsWith('http')) return res.status(400).json({ error: 'Неверная ссылка' });
 
     const list = await loadArticles();
     const stats = await fetchPostStats(url);
@@ -165,15 +182,16 @@ app.delete('/api/articles/:id', requireAuth, async (req, res) => {
   res.json({ ok: true });
 });
 
-// === SPA Fallback: САМЫЙ КОНЕЦ ===
-// отдаём index.html и по корню, и по /post-static
+// ---------- health (опционально)
+app.get('/health', (_req, res) => res.send('ok'));
+
+// ---------- SPA fallback (самый конец)
 app.get(['/', '/post-static', '/post-static/*'], (_req, res) => {
   res.sendFile(path.join(publicDir, 'index.html'));
 });
 
-// health-check (опционально для Render)
-app.get('/health', (_req, res) => res.send('ok'));
-
+// ---------- start ----------
+const PORT = Number(process.env.PORT) || CONFIG.port || 3000;
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server started on http://localhost:${PORT}`);
 });
