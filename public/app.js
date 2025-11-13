@@ -1,334 +1,306 @@
-// app.js
+// элементы DOM — убедись, что в HTML есть такие id
+const loginSection = document.getElementById('login-section');
+const adminSection = document.getElementById('admin-section');
 
-let ALL_ARTICLES = [];
+const loginForm = document.getElementById('login-form');
+const loginInput = document.getElementById('login');
+const passwordInput = document.getElementById('password');
+const loginError = document.getElementById('login-error');
 
-// --------- УТИЛИТЫ ----------
+const logoutBtn = document.getElementById('logout-btn');
+const statusLabel = document.getElementById('status-label');
 
-function formatDate(iso) {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleDateString('ru-RU');
+const addForm = document.getElementById('add-form');
+const urlInput = document.getElementById('article-url');
+const costInput = document.getElementById('article-cost');
+const addError = document.getElementById('add-error');
+
+const dateFromInput = document.getElementById('date-from');
+const dateToInput = document.getElementById('date-to');
+const monthSelect = document.getElementById('month-select');
+const resetFilterBtn = document.getElementById('reset-filter-btn');
+
+const statCount = document.getElementById('stat-count');
+const statOpens = document.getElementById('stat-opens');
+const statBudget = document.getElementById('stat-budget');
+const statCpm = document.getElementById('stat-cpm');
+
+const articlesBody = document.getElementById('articles-body');
+
+let allArticles = [];
+
+// --- helpers ---
+function setLoading(text = 'Обновляем…') {
+  if (statusLabel) statusLabel.textContent = text;
 }
 
-function formatNumber(x) {
-  if (x == null) return '—';
-  return x.toLocaleString('ru-RU');
+function clearLoading() {
+  if (statusLabel) statusLabel.textContent = '';
 }
 
-function formatMoney(x) {
-  if (x == null) return '—';
-  return x.toLocaleString('ru-RU', {
-    maximumFractionDigits: 0,
+async function api(path, options = {}) {
+  const res = await fetch(path, {
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    credentials: 'same-origin',
+    ...options
   });
-}
 
-// --------- АВТОРИЗАЦИЯ ----------
-
-async function checkAuth() {
-  try {
-    const res = await fetch('/api/auth/status');
-    if (res.ok) {
-      showApp();
-      await loadArticles();
-    } else {
-      showLogin();
-    }
-  } catch (e) {
-    console.error('Ошибка проверки авторизации', e);
+  if (res.status === 401) {
     showLogin();
+    throw new Error('Не авторизован');
   }
+
+  const data = await res.json().catch(() => ({}));
+
+  if (!res.ok) {
+    throw new Error(data.error || 'Ошибка запроса');
+  }
+
+  return data;
 }
 
 function showLogin() {
-  document.getElementById('login-screen').classList.remove('hidden');
-  document.getElementById('app').classList.add('hidden');
+  if (loginSection) loginSection.classList.remove('hidden');
+  if (adminSection) adminSection.classList.add('hidden');
 }
 
-function showApp() {
-  document.getElementById('login-screen').classList.add('hidden');
-  document.getElementById('app').classList.remove('hidden');
+function showAdmin() {
+  if (loginSection) loginSection.classList.add('hidden');
+  if (adminSection) adminSection.classList.remove('hidden');
 }
 
-async function handleLogin(event) {
-  event.preventDefault();
-  const login = document.getElementById('login').value.trim();
-  const password = document.getElementById('password').value.trim();
-  const errorEl = document.getElementById('login-error');
-  errorEl.textContent = '';
+// --- авторизация ---
+if (loginForm) {
+  loginForm.addEventListener('submit', async e => {
+    e.preventDefault();
+    if (loginError) loginError.textContent = '';
 
-  try {
-    const res = await fetch('/api/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ login, password }),
-    });
+    try {
+      setLoading('Вход…');
 
-    if (res.ok) {
-      showApp();
+      await api('/api/login', {
+        method: 'POST',
+        body: JSON.stringify({
+          login: loginInput.value.trim(),
+          password: passwordInput.value.trim()
+        })
+      });
+
+      showAdmin();
       await loadArticles();
-    } else {
-      errorEl.textContent = 'Неверный логин или пароль';
+    } catch (err) {
+      if (loginError) loginError.textContent = err.message;
+    } finally {
+      clearLoading();
     }
-  } catch (e) {
-    console.error(e);
-    errorEl.textContent = 'Ошибка при попытке входа';
-  }
+  });
 }
 
-async function handleLogout() {
-  try {
-    await fetch('/api/auth/logout', { method: 'POST' });
-  } catch (e) {
-    console.warn('Ошибка логаута', e);
-  }
-  showLogin();
+if (logoutBtn) {
+  logoutBtn.addEventListener('click', async () => {
+    try {
+      await api('/api/logout', { method: 'POST' });
+    } catch {}
+    showLogin();
+  });
 }
 
-// --------- РАБОТА СО СТАТЬЯМИ ----------
-
+// --- работа со статьями ---
 async function loadArticles() {
   try {
-    const res = await fetch('/api/articles');
-    if (!res.ok) {
-      if (res.status === 401) {
-        showLogin();
-        return;
-      }
-      throw new Error('Ошибка загрузки статей');
-    }
-
-    ALL_ARTICLES = await res.json();
-    renderArticles();
-  } catch (e) {
-    console.error(e);
-    alert('Не удалось загрузить статьи');
-  }
-}
-
-function getFilteredArticles() {
-  const fromVal = document.getElementById('from').value;
-  const toVal = document.getElementById('to').value;
-  const monthVal = document.getElementById('month').value;
-
-  let from = fromVal ? new Date(fromVal) : null;
-  let to = toVal ? new Date(toVal) : null;
-
-  if (to) {
-    // включительно конец дня
-    to.setHours(23, 59, 59, 999);
-  }
-
-  return ALL_ARTICLES.filter((a) => {
-    if (!a.publishedAt) return true;
-    const d = new Date(a.publishedAt);
-
-    if (from && d < from) return false;
-    if (to && d > to) return false;
-
-    if (monthVal !== '') {
-      const m = d.getMonth();
-      if (m !== Number(monthVal)) return false;
-    }
-
-    return true;
-  });
-}
-
-function renderArticles() {
-  const tbody = document.getElementById('articles-tbody');
-  tbody.innerHTML = '';
-
-  const filtered = getFilteredArticles();
-
-  let totalOpens = 0;
-  let totalCost = 0;
-  let cpmValues = 0;
-  let cpmCount = 0;
-
-  for (const article of filtered) {
-    const tr = document.createElement('tr');
-
-    const published = formatDate(article.publishedAt);
-    const opens = article.opens ?? article.views ?? 0;
-    const cost = article.cost || 0;
-    const cpm =
-      opens > 0 && cost > 0 ? +(cost / (opens / 1000)).toFixed(2) : null;
-
-    totalOpens += opens;
-    totalCost += cost;
-    if (cpm != null) {
-      cpmValues += cpm;
-      cpmCount += 1;
-    }
-
-    tr.innerHTML = `
-      <td>${published}</td>
-      <td>${article.title ? article.title : '—'}</td>
-      <td>
-        <a href="${article.url}" target="_blank" rel="noopener noreferrer">Открыть</a>
-      </td>
-      <td>${formatNumber(opens)}</td>
-      <td>${formatMoney(cost)}</td>
-      <td>${cpm != null ? formatNumber(cpm) : '—'}</td>
-      <td>
-        <button class="btn danger small" data-id="${article.id}">Удалить</button>
-      </td>
-    `;
-
-    tbody.appendChild(tr);
-  }
-
-  // обновляем сводку
-  document.getElementById('stat-count').textContent = filtered.length;
-  document.getElementById('stat-opens').textContent = formatNumber(totalOpens);
-  document.getElementById('stat-cost').textContent = formatMoney(totalCost);
-
-  const avgCpm = cpmCount > 0 ? +(cpmValues / cpmCount).toFixed(2) : null;
-  document.getElementById('stat-cpm').textContent =
-    avgCpm != null ? formatNumber(avgCpm) : '—';
-
-  // навешиваем обработчики удаления
-  tbody.querySelectorAll('button[data-id]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const id = btn.getAttribute('data-id');
-      deleteArticle(id);
-    });
-  });
-}
-
-async function deleteArticle(id) {
-  if (!confirm('Удалить эту статью из списка?')) return;
-
-  try {
-    const res = await fetch(`/api/articles/${id}`, { method: 'DELETE' });
-    if (!res.ok) throw new Error('Ошибка удаления');
-
-    ALL_ARTICLES = ALL_ARTICLES.filter((a) => a.id !== id);
-    renderArticles();
-  } catch (e) {
-    console.error(e);
-    alert('Не удалось удалить статью');
-  }
-}
-
-async function handleAddArticle(event) {
-  event.preventDefault();
-  const urlInput = document.getElementById('url');
-  const costInput = document.getElementById('cost');
-
-  const url = urlInput.value.trim();
-  const cost = costInput.value ? Number(costInput.value) : 0;
-
-  if (!url) {
-    alert('Введите ссылку на статью');
-    return;
-  }
-
-  const btn = event.submitter || event.target.querySelector('button[type=submit]');
-  const originalText = btn.textContent;
-  btn.disabled = true;
-  btn.textContent = 'Добавляем...';
-
-  try {
-    const res = await fetch('/api/articles', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url, cost }),
-    });
-
-    if (!res.ok) {
-      if (res.status === 401) {
-        showLogin();
-        return;
-      }
-      const data = await res.json().catch(() => ({}));
-      throw new Error(data.error || 'Не удалось добавить статью');
-    }
-
-    const article = await res.json();
-    ALL_ARTICLES.push(article);
-    urlInput.value = '';
-    costInput.value = '';
-    renderArticles();
-  } catch (e) {
-    console.error(e);
-    alert(e.message || 'Ошибка при добавлении статьи');
+    setLoading('Загружаем статьи…');
+    const articles = await api('/api/articles');
+    allArticles = articles;
+    render();
+  } catch (err) {
+    console.error(err);
   } finally {
-    btn.disabled = false;
-    btn.textContent = originalText;
+    clearLoading();
   }
 }
 
-async function handleRefreshAll() {
-  if (!confirm('Обновить статистику по всем статьям?')) return;
+if (addForm) {
+  addForm.addEventListener('submit', async e => {
+    e.preventDefault();
+    if (addError) addError.textContent = '';
 
-  const btn = document.getElementById('refresh-btn');
-  const originalText = btn.textContent;
-  btn.disabled = true;
-  btn.textContent = 'Обновляем...';
+    const url = urlInput.value.trim();
+    const cost = costInput.value.trim();
 
-  try {
-    const res = await fetch('/api/articles/refresh', { method: 'POST' });
-    if (!res.ok) {
-      if (res.status === 401) {
-        showLogin();
-        return;
-      }
-      throw new Error('Не удалось обновить статьи');
+    if (!url) {
+      if (addError) addError.textContent = 'Укажите ссылку на публикацию';
+      return;
     }
-    ALL_ARTICLES = await res.json();
-    renderArticles();
-  } catch (e) {
-    console.error(e);
-    alert(e.message || 'Ошибка при обновлении статей');
-  } finally {
-    btn.disabled = false;
-    btn.textContent = originalText;
+
+    try {
+      setLoading('Подтягиваем статистику…');
+      const article = await api('/api/articles', {
+        method: 'POST',
+        body: JSON.stringify({ url, cost })
+      });
+
+      allArticles.push(article);
+      urlInput.value = '';
+      costInput.value = '';
+      render();
+    } catch (err) {
+      if (addError) addError.textContent = err.message;
+    } finally {
+      clearLoading();
+    }
+  });
+}
+
+async function handleDelete(id) {
+  if (!confirm('Удалить эту статью?')) return;
+  try {
+    await api(`/api/articles/${id}`, { method: 'DELETE' });
+    allArticles = allArticles.filter(a => a.id !== id);
+    render();
+  } catch (err) {
+    alert(err.message);
   }
 }
 
-function handleFiltersChange() {
-  renderArticles();
+// --- фильтры и статистика ---
+function normalizeDate(dateStr) {
+  if (!dateStr) return null;
+
+  // ISO
+  const iso = Date.parse(dateStr);
+  if (!Number.isNaN(iso)) return new Date(iso);
+
+  // dd.mm.yyyy
+  const parts = dateStr.split('.');
+  if (parts.length === 3) {
+    const [d, m, y] = parts.map(Number);
+    return new Date(y, m - 1, d);
+  }
+
+  return null;
 }
 
-function handleClearFilters() {
-  document.getElementById('from').value = '';
-  document.getElementById('to').value = '';
-  document.getElementById('month').value = '';
-  renderArticles();
+function applyFilters(list) {
+  let filtered = [...list];
+
+  const from = dateFromInput?.value ? new Date(dateFromInput.value) : null;
+  const to = dateToInput?.value ? new Date(dateToInput.value) : null;
+  const month = monthSelect?.value || 'all';
+
+  if (from || to || month !== 'all') {
+    filtered = filtered.filter(a => {
+      const d = normalizeDate(a.publishedAt);
+      if (!d) return true;
+      if (from && d < from) return false;
+      if (to && d > to) return false;
+      if (month !== 'all' && d.getMonth() + 1 !== Number(month)) return false;
+      return true;
+    });
+  }
+
+  return filtered;
 }
 
-// --------- INIT ----------
+function formatNumber(n) {
+  if (n == null || Number.isNaN(n)) return '—';
+  return n.toLocaleString('ru-RU');
+}
 
-document.addEventListener('DOMContentLoaded', () => {
-  // логин
-  const loginForm = document.getElementById('login-form');
-  loginForm.addEventListener('submit', handleLogin);
+function render() {
+  const list = applyFilters(allArticles);
 
-  // logout
-  document.getElementById('logout-btn').addEventListener('click', handleLogout);
+  const count = list.length;
+  const opens = list.reduce((sum, a) => sum + (a.opens || 0), 0);
+  const budget = list.reduce((sum, a) => sum + (a.cost || 0), 0);
+  const avgCpm = opens > 0 ? Math.round((budget / opens) * 1000) : null;
 
-  // форма добавления
-  document
-    .getElementById('add-form')
-    .addEventListener('submit', handleAddArticle);
+  if (statCount) statCount.textContent = count;
+  if (statOpens) statOpens.textContent = formatNumber(opens);
+  if (statBudget) statBudget.textContent = formatNumber(budget);
+  if (statCpm)
+    statCpm.textContent = avgCpm != null ? formatNumber(avgCpm) : '—';
 
-  // кнопка обновления
-  document
-    .getElementById('refresh-btn')
-    .addEventListener('click', handleRefreshAll);
+  if (!articlesBody) return;
 
-  // фильтры
-  ['from', 'to', 'month'].forEach((id) => {
-    const el = document.getElementById(id);
-    el.addEventListener('change', handleFiltersChange);
+  articlesBody.innerHTML = '';
+
+  list
+    .slice()
+    .sort((a, b) => {
+      const da = normalizeDate(a.publishedAt)?.getTime() || 0;
+      const db = normalizeDate(b.publishedAt)?.getTime() || 0;
+      return db - da;
+    })
+    .forEach(article => {
+      const tr = document.createElement('tr');
+
+      const dateTd = document.createElement('td');
+      dateTd.textContent = article.publishedAt || '—';
+
+      const titleTd = document.createElement('td');
+      titleTd.textContent = article.title || 'Без названия';
+
+      const linkTd = document.createElement('td');
+      const link = document.createElement('a');
+      link.href = article.url;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.textContent = 'Открыть';
+      linkTd.appendChild(link);
+
+      const opensTd = document.createElement('td');
+      opensTd.textContent = formatNumber(article.opens);
+
+      const costTd = document.createElement('td');
+      costTd.textContent = formatNumber(article.cost);
+
+      const cpmTd = document.createElement('td');
+      cpmTd.textContent =
+        article.cpm != null ? formatNumber(article.cpm) : '—';
+
+      const actionsTd = document.createElement('td');
+      actionsTd.className = 'actions-cell';
+      const delBtn = document.createElement('button');
+      delBtn.className = 'btn-secondary';
+      delBtn.textContent = 'Удалить';
+      delBtn.addEventListener('click', () => handleDelete(article.id));
+      actionsTd.appendChild(delBtn);
+
+      tr.appendChild(dateTd);
+      tr.appendChild(titleTd);
+      tr.appendChild(linkTd);
+      tr.appendChild(opensTd);
+      tr.appendChild(costTd);
+      tr.appendChild(cpmTd);
+      tr.appendChild(actionsTd);
+
+      articlesBody.appendChild(tr);
+    });
+}
+
+// фильтры
+[dateFromInput, dateToInput, monthSelect].forEach(el => {
+  if (!el) return;
+  el.addEventListener('change', () => render());
+});
+
+if (resetFilterBtn) {
+  resetFilterBtn.addEventListener('click', () => {
+    if (dateFromInput) dateFromInput.value = '';
+    if (dateToInput) dateToInput.value = '';
+    if (monthSelect) monthSelect.value = 'all';
+    render();
   });
+}
 
-  document
-    .getElementById('clear-filters')
-    .addEventListener('click', handleClearFilters);
-
-  // старт — проверяем авторизацию
-  checkAuth();
+// при загрузке страницы пробуем сразу получить статьи
+window.addEventListener('load', async () => {
+  try {
+    await loadArticles();
+    showAdmin();
+  } catch {
+    showLogin();
+  }
 });
