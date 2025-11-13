@@ -1,153 +1,86 @@
 <!doctype html>
 <html lang="ru">
-  <head>
-    <meta charset="utf-8" />
-    <title>Post Static — трекер публикаций VC.ru</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="/static/styles.css">
-  </head>
-  <body>
-    <div class="app">
-      <header class="app-header">
-        <h1>Post Static</h1>
-        <p class="subtitle">Трекер платных публикаций VC.ru</p>
-      </header>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>VC Metrics</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="container">
+    <h1>VC Metrics</h1>
 
-      <!-- ЛОГИН (по умолчанию) -->
-      <section id="login-section" class="card card--narrow">
-        <h2>Вход</h2>
-        <form id="login-form" class="form form--vertical" novalidate>
-          <label class="form__field">
-            <span>Логин</span>
-            <input id="login" type="text" autocomplete="username" required />
-          </label>
-          <label class="form__field">
-            <span>Пароль</span>
-            <input id="password" type="password" autocomplete="current-password" required />
-          </label>
-          <label class="checkbox">
-            <input id="remember" type="checkbox" />
-            <span>Запомнить на 7 дней</span>
-          </label>
-          <button class="btn" type="submit">Войти</button>
-          <p id="login-error" class="error"></p>
-        </form>
-      </section>
-
-      <!-- АДМИНКА (скрыта) -->
-      <section id="admin-section" class="hidden">
-        <div class="toolbar card">
-          <h2 class="toolbar__title">Админка статистики</h2>
-          <div class="toolbar__right">
-            <span id="status-label" class="status-label"></span>
-            <button id="logout-btn" class="btn btn--ghost">Выйти</button>
-          </div>
+    <section class="card">
+      <div class="row">
+        <div class="col">
+          <label>Выбрать статью</label>
+          <select id="articleSelect"></select>
         </div>
+        <div class="col">
+          <label>ID контента</label>
+          <input id="contentId" class="input" placeholder="например, 2303745" />
+        </div>
+        <div class="col">
+          <label>Режим расчёта</label>
+          <select id="mode">
+            <option value="fixed">CPM фиксированный</option>
+            <option value="budget">Есть общий бюджет</option>
+          </select>
+        </div>
+      </div>
 
-        <!-- Добавить статью -->
-        <section class="card">
-          <h3>Добавить статью</h3>
-          <form id="add-form" class="form-grid" novalidate>
-            <label class="form__field">
-              <span>Ссылка на публикацию VC.ru</span>
-              <input id="article-url" type="url" placeholder="https://vc.ru/..." required />
-            </label>
-            <label class="form__field">
-              <span>Стоимость размещения (₽)</span>
-              <input id="article-cost" type="number" min="0" step="1" placeholder="15000" required />
-            </label>
-            <div class="form__actions">
-              <!-- type="button" чтобы не было перезагрузки -->
-              <button id="add-btn" class="btn" type="button">Добавить</button>
-            </div>
-          </form>
-          <p id="add-error" class="error"></p>
-        </section>
+      <div class="row" id="fixedInputs">
+        <div class="col">
+          <label>Цена за 1000 открытий (₽)</label>
+          <input id="cpmHits" class="input" type="number" step="0.01" />
+        </div>
+        <div class="col">
+          <label>Цена за 1000 показов (₽)</label>
+          <input id="cpmViews" class="input" type="number" step="0.01" />
+        </div>
+      </div>
 
-        <!-- Сворачиваемый фильтр -->
-        <details class="card" id="filter-panel">
-          <summary><strong>Фильтр по периоду</strong></summary>
-          <div class="filter-grid" style="margin-top:12px">
-            <label class="form__field">
-              <span>С</span>
-              <input id="date-from" type="date" />
-            </label>
-            <label class="form__field">
-              <span>По</span>
-              <input id="date-to" type="date" />
-            </label>
-            <label class="form__field">
-              <span>Месяц</span>
-              <select id="month-select">
-                <option value="all">Все</option>
-                <option value="1">Январь</option>
-                <option value="2">Февраль</option>
-                <option value="3">Март</option>
-                <option value="4">Апрель</option>
-                <option value="5">Май</option>
-                <option value="6">Июнь</option>
-                <option value="7">Июль</option>
-                <option value="8">Август</option>
-                <option value="9">Сентябрь</option>
-                <option value="10">Октябрь</option>
-                <option value="11">Ноябрь</option>
-                <option value="12">Декабрь</option>
-              </select>
-            </label>
-            <div class="form__actions">
-              <button id="reset-filter-btn" class="btn btn--ghost" type="button">Сбросить</button>
-            </div>
-          </div>
-        </details>
+      <div class="row" id="budgetInput" style="display:none;">
+        <div class="col">
+          <label>Общий бюджет, ₽</label>
+          <input id="budget" class="input" type="number" step="0.01" />
+        </div>
+      </div>
 
-        <!-- Сводка -->
-        <section class="card stats-card">
-          <h3>Сводная статистика</h3>
-          <div class="stats-grid">
-            <div class="stat">
-              <div class="stat__label">Публикаций</div>
-              <div id="stat-count" class="stat__value">0</div>
-            </div>
-            <div class="stat">
-              <div class="stat__label">Всего открытий</div>
-              <div id="stat-opens" class="stat__value">0</div>
-            </div>
-            <div class="stat">
-              <div class="stat__label">Бюджет (₽)</div>
-              <div id="stat-budget" class="stat__value">0</div>
-            </div>
-            <div class="stat">
-              <div class="stat__label">Средний CPM (₽)</div>
-              <div id="stat-cpm" class="stat__value">—</div>
-            </div>
-          </div>
-        </section>
+      <div class="row">
+        <button id="loadBtn" class="btn">Получить метрики</button>
+        <div id="status" class="status muted">Готов к запросу.</div>
+      </div>
+    </section>
 
-        <!-- Таблица -->
-        <section class="card">
-          <h3>Список статей</h3>
-          <div class="table-wrapper">
-            <table class="articles-table">
-              <thead>
-                <tr>
-                  <th>Дата</th>
-                  <th>Заголовок</th>
-                  <th>Ссылка</th>
-                  <th>Открытия</th>
-                  <th>Стоимость</th>
-                  <th>CPM</th>
-                  <th>Обновлено</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody id="articles-body"></tbody>
-            </table>
-          </div>
-        </section>
-      </section>
-    </div>
+    <section class="grid">
+      <div class="kpi">
+        <div class="kpi-title">Показы в ленте</div>
+        <div class="kpi-val" id="views">—</div>
+        <div class="kpi-sub">API: counters.views</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-title">Открытия статьи</div>
+        <div class="kpi-val" id="hits">—</div>
+        <div class="kpi-sub">API: counters.hits / hitsCount</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-title" id="calcTitle">Стоимость по CPM (₽)</div>
+        <div class="kpi-val" id="calcA">—</div>
+        <div class="kpi-sub" id="calcASub">по открытиям</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-title">&nbsp;</div>
+        <div class="kpi-val" id="calcB">—</div>
+        <div class="kpi-sub" id="calcBSub">по показам</div>
+      </div>
+    </section>
 
-    <script src="/static/app.js"></script>
-  </body>
+    <section class="card tip">
+      <div>На VC: <span class="badge">views</span> — показы в ленте, <span class="badge">hits</span> — открытия материала.</div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
 </html>
