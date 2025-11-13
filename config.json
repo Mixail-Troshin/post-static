@@ -1,9 +1,32 @@
 {
-  "apiBase": "", 
-  "mode": "fixed", 
-  "cpm": {
-    "hits": 500,
-    "views": 150
+  "apiBase": "",
+  "mode": "fixed",
+  "cpm": { "hits": 500, "views": 150 },
+  "budget": 10000,
+
+  "auth": {
+    "jwtSecret": "change-this-secret",
+    "cookieName": "vc_metrics_session"
   },
-  "budget": 10000
+
+  "smtp": {
+    "host": "",
+    "port": 587,
+    "secure": false,
+    "user": "",
+    "pass": "",
+    "from": "no-reply@example.com"
+  },
+
+  "users": [
+    {
+      "id": "u_admin",
+      "email": "admin@local",
+      "username": "admin",
+      "role": "admin",
+      "passwordHash": "$2a$10$wVDhwL5Ognr3FMBbHhKQXeDq3WThcWQ8YyK1cFOBa6JzJ5fuwKJ0u",
+      "active": true,
+      "createdAt": "2025-01-01T00:00:00.000Z"
+    }
+  ]
 }
