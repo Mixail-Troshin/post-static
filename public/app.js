@@ -1,267 +1,206 @@
-// DOM
-const loginSection = document.getElementById('login-section');
-const adminSection = document.getElementById('admin-section');
+const $ = s => document.querySelector(s);
+const $$ = s => Array.from(document.querySelectorAll(s));
 
-const loginForm = document.getElementById('login-form');
-const loginInput = document.getElementById('login');
-const passwordInput = document.getElementById('password');
-const loginError = document.getElementById('login-error');
+const loginSection  = $('#login-section');
+const adminSection  = $('#admin-section');
+const loginForm     = $('#login-form');
+const loginInput    = $('#login');
+const passInput     = $('#password');
+const rememberInput = $('#remember');
+const loginError    = $('#login-error');
 
-const logoutBtn = document.getElementById('logout-btn');
-const statusLabel = document.getElementById('status-label');
+const logoutBtn     = $('#logout-btn');
+const statusLabel   = $('#status-label');
 
-const addForm = document.getElementById('add-form');
-const urlInput = document.getElementById('article-url');
-const costInput = document.getElementById('article-cost');
-const addError = document.getElementById('add-error');
+const addForm   = $('#add-form');
+const urlInput  = $('#article-url');
+const costInput = $('#article-cost');
+const addError  = $('#add-error');
 
-const dateFromInput = document.getElementById('date-from');
-const dateToInput = document.getElementById('date-to');
-const monthSelect = document.getElementById('month-select');
-const resetFilterBtn = document.getElementById('reset-filter-btn');
+const dateFrom  = $('#date-from');
+const dateTo    = $('#date-to');
+const monthSel  = $('#month-select');
+const resetBtn  = $('#reset-filter-btn');
 
-const statCount = document.getElementById('stat-count');
-const statOpens = document.getElementById('stat-opens');
-const statBudget = document.getElementById('stat-budget');
-const statCpm = document.getElementById('stat-cpm');
+const bodyEl    = $('#articles-body');
 
-const articlesBody = document.getElementById('articles-body');
+const statCount  = $('#stat-count');
+const statOpens  = $('#stat-opens');
+const statBudget = $('#stat-budget');
+const statCpm    = $('#stat-cpm');
 
-let allArticles = [];
-
-// helpers
-function setLoading(text = 'Обновляем…') {
-  if (statusLabel) statusLabel.textContent = text;
+function showLogin(){
+  adminSection.classList.add('hidden');
+  loginSection.classList.remove('hidden');
+  loginError.textContent = '';
+  loginInput.focus();
 }
-function clearLoading() {
-  if (statusLabel) statusLabel.textContent = '';
+function showAdmin(){
+  loginSection.classList.add('hidden');
+  adminSection.classList.remove('hidden');
 }
-async function api(path, options = {}) {
-  const res = await fetch(path, {
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'same-origin',
-    ...options
-  });
 
-  if (res.status === 401) {
-    showLogin();
-    throw new Error('Не авторизован');
+async function api(url, opts = {}) {
+  const headers = { 'Content-Type': 'application/json' };
+  const res = await fetch(url, { credentials: 'same-origin', headers, ...opts });
+  if (!res.ok) {
+    let text;
+    try { text = await res.json(); } catch { text = {}; }
+    throw new Error(text.error || `HTTP ${res.status}`);
   }
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || 'Ошибка запроса');
-  return data;
-}
-function showLogin() {
-  if (loginSection) loginSection.classList.remove('hidden');
-  if (adminSection) adminSection.classList.add('hidden');
-}
-function showAdmin() {
-  if (loginSection) loginSection.classList.add('hidden');
-  if (adminSection) adminSection.classList.remove('hidden');
+  const ct = res.headers.get('content-type') || '';
+  return ct.includes('application/json') ? res.json() : res.text();
 }
 
-// auth
-if (loginForm) {
-  loginForm.addEventListener('submit', async e => {
-    e.preventDefault();
-    if (loginError) loginError.textContent = '';
-    try {
-      setLoading('Вход…');
-      await api('/api/login', {
-        method: 'POST',
-        body: JSON.stringify({
-          login: loginInput.value.trim(),
-          password: passwordInput.value.trim()
-        })
-      });
+async function checkAuth() {
+  try {
+    const me = await api('/api/me');
+    if (me.auth) {
       showAdmin();
       await loadArticles();
-    } catch (err) {
-      if (loginError) loginError.textContent = err.message;
-    } finally {
-      clearLoading();
+    } else {
+      showLogin();
     }
-  });
-}
-if (logoutBtn) {
-  logoutBtn.addEventListener('click', async () => {
-    try { await api('/api/logout', { method: 'POST' }); } catch {}
-    showLogin();
-  });
-}
-
-// data
-async function loadArticles() {
-  try {
-    setLoading('Загружаем статьи…');
-    const articles = await api('/api/articles');
-    allArticles = articles;
-    render();
-  } catch (err) {
-    console.error(err);
-  } finally {
-    clearLoading();
-  }
-}
-if (addForm) {
-  addForm.addEventListener('submit', async e => {
-    e.preventDefault();
-    if (addError) addError.textContent = '';
-
-    const url = urlInput.value.trim();
-    const cost = costInput.value.trim();
-    if (!url) { addError.textContent = 'Укажите ссылку на публикацию'; return; }
-
-    try {
-      setLoading('Подтягиваем статистику…');
-      const article = await api('/api/articles', {
-        method: 'POST',
-        body: JSON.stringify({ url, cost })
-      });
-      allArticles.push(article);
-      urlInput.value = '';
-      costInput.value = '';
-      render();
-    } catch (err) {
-      if (addError) addError.textContent = err.message;
-    } finally {
-      clearLoading();
-    }
-  });
-}
-async function handleDelete(id) {
-  if (!confirm('Удалить эту статью?')) return;
-  try {
-    await api(`/api/articles/${id}`, { method: 'DELETE' });
-    allArticles = allArticles.filter(a => a.id !== id);
-    render();
-  } catch (err) {
-    alert(err.message);
-  }
-}
-
-// filters & render
-function normalizeDate(dateStr) {
-  if (!dateStr) return null;
-  const iso = Date.parse(dateStr);
-  if (!Number.isNaN(iso)) return new Date(iso);
-  const parts = dateStr.split('.');
-  if (parts.length === 3) {
-    const [d, m, y] = parts.map(Number);
-    return new Date(y, m - 1, d);
-  }
-  return null;
-}
-function applyFilters(list) {
-  let filtered = [...list];
-  const from = dateFromInput?.value ? new Date(dateFromInput.value) : null;
-  const to = dateToInput?.value ? new Date(dateToInput.value) : null;
-  const month = monthSelect?.value || 'all';
-
-  if (from || to || month !== 'all') {
-    filtered = filtered.filter(a => {
-      const d = normalizeDate(a.publishedAt);
-      if (!d) return true;
-      if (from && d < from) return false;
-      if (to && d > to) return false;
-      if (month !== 'all' && d.getMonth() + 1 !== Number(month)) return false;
-      return true;
-    });
-  }
-  return filtered;
-}
-function formatNumber(n) {
-  if (n == null || Number.isNaN(n)) return '—';
-  return n.toLocaleString('ru-RU');
-}
-function render() {
-  const list = applyFilters(allArticles);
-
-  const count = list.length;
-  const opens = list.reduce((sum, a) => sum + (a.opens || 0), 0);
-  const budget = list.reduce((sum, a) => sum + (a.cost || 0), 0);
-  const avgCpm = opens > 0 ? Math.round((budget / opens) * 1000) : null;
-
-  if (statCount) statCount.textContent = count;
-  if (statOpens) statOpens.textContent = formatNumber(opens);
-  if (statBudget) statBudget.textContent = formatNumber(budget);
-  if (statCpm) statCpm.textContent = avgCpm != null ? formatNumber(avgCpm) : '—';
-
-  if (!articlesBody) return;
-  articlesBody.innerHTML = '';
-
-  list
-    .slice()
-    .sort((a, b) => {
-      const da = normalizeDate(a.publishedAt)?.getTime() || 0;
-      const db = normalizeDate(b.publishedAt)?.getTime() || 0;
-      return db - da;
-    })
-    .forEach(article => {
-      const tr = document.createElement('tr');
-
-      const dateTd = document.createElement('td');
-      dateTd.textContent = article.publishedAt || '—';
-
-      const titleTd = document.createElement('td');
-      titleTd.textContent = article.title || 'Без названия';
-
-      const linkTd = document.createElement('td');
-      const link = document.createElement('a');
-      link.href = article.url;
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
-      link.textContent = 'Открыть';
-      linkTd.appendChild(link);
-
-      const opensTd = document.createElement('td');
-      opensTd.textContent = formatNumber(article.opens);
-
-      const costTd = document.createElement('td');
-      costTd.textContent = formatNumber(article.cost);
-
-      const cpmTd = document.createElement('td');
-      cpmTd.textContent = article.cpm != null ? formatNumber(article.cpm) : '—';
-
-      const actionsTd = document.createElement('td');
-      actionsTd.className = 'actions-cell';
-      const delBtn = document.createElement('button');
-      delBtn.className = 'btn btn--secondary';
-      delBtn.textContent = 'Удалить';
-      delBtn.addEventListener('click', () => handleDelete(article.id));
-      actionsTd.appendChild(delBtn);
-
-      tr.appendChild(dateTd);
-      tr.appendChild(titleTd);
-      tr.appendChild(linkTd);
-      tr.appendChild(opensTd);
-      tr.appendChild(costTd);
-      tr.appendChild(cpmTd);
-      tr.appendChild(actionsTd);
-
-      articlesBody.appendChild(tr);
-    });
-}
-
-[dateFromInput, dateToInput, monthSelect].forEach(el => {
-  if (!el) return;
-  el.addEventListener('change', () => render());
-});
-if (resetFilterBtn) {
-  resetFilterBtn.addEventListener('click', () => {
-    if (dateFromInput) dateFromInput.value = '';
-    if (dateToInput) dateToInput.value = '';
-    if (monthSelect) monthSelect.value = 'all';
-    render();
-  });
-}
-
-// авто: пытаемся загрузить после старта
-window.addEventListener('load', async () => {
-  try {
-    await loadArticles();
-    showAdmin();
   } catch {
     showLogin();
   }
+}
+
+// Login
+loginForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  loginError.textContent = '';
+  try {
+    await api('/api/login', {
+      method: 'POST',
+      body: JSON.stringify({
+        login: loginInput.value.trim(),
+        password: passInput.value,
+        remember: !!rememberInput.checked
+      })
+    });
+    await checkAuth();
+    loginForm.reset();
+  } catch (err) {
+    loginError.textContent = err.message || 'Ошибка входа';
+  }
 });
+
+// Logout
+logoutBtn.addEventListener('click', async () => {
+  try {
+    await api('/api/logout', { method: 'POST' });
+  } catch {}
+  await checkAuth();
+});
+
+// Add article
+addForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  addError.textContent = '';
+  try {
+    const url = urlInput.value.trim();
+    const cost = Number(costInput.value);
+    const item = await api('/api/articles', {
+      method: 'POST',
+      body: JSON.stringify({ url, cost })
+    });
+    urlInput.value = '';
+    costInput.value = '';
+    await loadArticles();
+  } catch (err) {
+    addError.textContent = err.message || 'Не удалось добавить';
+  }
+});
+
+// Filters
+[dateFrom, dateTo, monthSel].forEach(el => el.addEventListener('change', () => renderArticles(window.__articles || [])));
+resetBtn.addEventListener('click', () => {
+  dateFrom.value = ''; dateTo.value = ''; monthSel.value = 'all';
+  renderArticles(window.__articles || []);
+});
+
+function withinFilters(a) {
+  const from = dateFrom.value ? new Date(dateFrom.value) : null;
+  const to   = dateTo.value   ? new Date(dateTo.value)   : null;
+  const month = monthSel.value;
+
+  const pub = a.publishedAt ? new Date(a.publishedAt) : null;
+  if (from && pub && pub < new Date(from.getFullYear(), from.getMonth(), from.getDate())) return false;
+  if (to && pub && pub > new Date(to.getFullYear(), to.getMonth(), to.getDate(), 23, 59, 59, 999)) return false;
+  if (month !== 'all' && pub && (pub.getMonth()+1) !== Number(month)) return false;
+  return true;
+}
+
+function formatMoney(v) {
+  if (v == null) return '—';
+  return new Intl.NumberFormat('ru-RU').format(Math.round(v));
+}
+function formatDate(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(d)) return iso;
+  return d.toLocaleDateString('ru-RU', { year: 'numeric', month: '2-digit', day: '2-digit' });
+}
+
+function renderArticles(list) {
+  const rows = [];
+  const filtered = list.filter(withinFilters);
+
+  let totalOpens = 0;
+  let totalCost = 0;
+  filtered.forEach(a => {
+    totalOpens += Number(a.opens || 0);
+    totalCost  += Number(a.cost  || 0);
+  });
+  const avgCpm = totalOpens > 0 ? Math.round((totalCost / totalOpens) * 1000) : null;
+
+  statCount.textContent  = filtered.length;
+  statOpens.textContent  = formatMoney(totalOpens);
+  statBudget.textContent = formatMoney(totalCost);
+  statCpm.textContent    = avgCpm != null ? formatMoney(avgCpm) : '—';
+
+  filtered
+    .sort((a,b) => (b.publishedAt || '').localeCompare(a.publishedAt || ''))
+    .forEach(a => {
+      rows.push(`
+        <tr>
+          <td>${formatDate(a.publishedAt)}</td>
+          <td>${a.title ? a.title.replace(/</g,'&lt;') : '—'}</td>
+          <td><a href="${a.url}" target="_blank" rel="noopener">Открыть</a></td>
+          <td><span class="badge">${formatMoney(a.opens)}</span></td>
+          <td>${formatMoney(a.cost)}</td>
+          <td>${a.cpm != null ? formatMoney(a.cpm) : '—'}</td>
+          <td class="actions-cell">
+            <button class="btn btn--danger" data-del="${a.id}">Удалить</button>
+          </td>
+        </tr>
+      `);
+    });
+
+  bodyEl.innerHTML = rows.join('') || `<tr><td colspan="7" style="color:#9aa7bf">Пока пусто</td></tr>`;
+
+  // delete handlers
+  $$('button[data-del]').forEach(btn => {
+    btn.onclick = async () => {
+      const id = Number(btn.getAttribute('data-del'));
+      try {
+        await api(`/api/articles/${id}`, { method: 'DELETE' });
+        await loadArticles();
+      } catch (e) {
+        alert(e.message || 'Не удалось удалить');
+      }
+    };
+  });
+
+  statusLabel.textContent = `Всего в базе: ${list.length}`;
+}
+
+async function loadArticles() {
+  const data = await api('/api/articles');
+  window.__articles = data;
+  renderArticles(data);
+}
+
+// init
+window.addEventListener('load', checkAuth);
