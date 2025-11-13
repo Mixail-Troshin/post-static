@@ -1,0 +1,8 @@
+[
+  {
+    "id": "u1",
+    "email": "admin@local",
+    "passwordHash": "$2b$12$bF9/3pVaCM6L8BGZokmM8ecGfiY/WcKoIa/jv03gRrBTr2VQkVb2C",
+    "isAdmin": true
+  }
+]
