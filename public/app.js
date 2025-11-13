@@ -13,6 +13,7 @@ const logoutBtn     = $('#logout-btn');
 const statusLabel   = $('#status-label');
 
 const addForm   = $('#add-form');
+const addBtn    = $('#add-btn');      // кнопка (type="button")
 const urlInput  = $('#article-url');
 const costInput = $('#article-cost');
 const addError  = $('#add-error');
@@ -191,6 +192,28 @@ loginForm.addEventListener('submit', async (e) => {
     loginForm.reset();
   } catch (err) {
     loginError.textContent = err.message || 'Ошибка входа';
+  }
+});
+
+// Add article (кнопка, НЕ submit формы)
+addBtn.addEventListener('click', async () => {
+  addError.textContent = '';
+  try {
+    const url  = urlInput.value.trim();
+    const cost = Number(costInput.value);
+    if (!url) throw new Error('Укажите ссылку');
+    if (Number.isNaN(cost) || cost < 0) throw new Error('Некорректная стоимость');
+
+    await api('/api/articles', {
+      method: 'POST',
+      body: JSON.stringify({ url, cost })
+    });
+
+    urlInput.value = '';
+    costInput.value = '';
+    await loadArticles();
+  } catch (err) {
+    addError.textContent = err.message || 'Не удалось добавить';
   }
 });
 
