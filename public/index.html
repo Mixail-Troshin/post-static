@@ -1,97 +1,161 @@
 <!doctype html>
 <html lang="ru">
-<head>
-  <meta charset="UTF-8" />
-  <title>Статистика статей vc.ru</title>
-  <link rel="stylesheet" href="styles.css" />
-</head>
-<body>
-  <div class="app">
-    <header class="app-header">
-      <h1>Статистика статей vc.ru</h1>
-      <p>Учёт оплаченных публикаций и их охвата</p>
-    </header>
+  <head>
+    <meta charset="utf-8" />
+    <title>Post Static — трекер публикаций VC.ru</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="app-header">
+        <h1>Post Static</h1>
+        <p class="subtitle">Трекер платных публикаций VC.ru</p>
+      </header>
 
-    <section class="card">
-      <h2>Добавить статью</h2>
-      <form id="add-form">
-        <input
-          type="url"
-          id="article-url"
-          placeholder="Вставьте ссылку на публикацию vc.ru"
-          required
-        />
-        <input
-          type="text"
-          id="article-cost"
-          placeholder="Стоимость размещения, ₽"
-        />
-        <button type="submit">Добавить статью</button>
-      </form>
-      <p id="form-message" class="message"></p>
-    </section>
+      <!-- Блок логина -->
+      <section id="login-section" class="card">
+        <h2>Вход в админку статистики VC.ru</h2>
+        <form id="login-form" class="form-inline">
+          <label>
+            Логин
+            <input type="text" id="login" value="admin" />
+          </label>
+          <label>
+            Пароль
+            <input type="password" id="password" value="secret123" />
+          </label>
+          <button type="submit">Войти</button>
+        </form>
+        <p class="hint">
+          Логин и пароль можно поменять в <code>server.js</code> или через
+          переменные окружения.
+        </p>
+        <p id="login-error" class="error"></p>
+      </section>
 
-    <section class="card">
-      <div class="filters-header">
-        <h2>Фильтр по периоду</h2>
-        <div class="quick-filters">
-          <button type="button" class="chip" data-filter="all">Всё время</button>
-          <button type="button" class="chip" data-filter="this-month">Этот месяц</button>
-          <button type="button" class="chip" data-filter="last-month">Прошлый месяц</button>
+      <!-- Основная админка -->
+      <section id="admin-section" class="hidden">
+        <div class="toolbar">
+          <h2>Post Static — трекер публикаций VC.ru</h2>
+          <div class="toolbar-right">
+            <span id="status-label" class="status-label">Обновляем…</span>
+            <button id="logout-btn" class="btn-secondary">Выйти</button>
+          </div>
         </div>
-      </div>
-      <div class="filters-row">
-        <div class="field">
-          <label for="filter-from">С:</label>
-          <input type="date" id="filter-from" />
-        </div>
-        <div class="field">
-          <label for="filter-to">По:</label>
-          <input type="date" id="filter-to" />
-        </div>
-        <div class="field field-buttons">
-          <button type="button" id="apply-filter">Применить</button>
-          <button type="button" id="reset-filter" class="secondary">Сбросить</button>
-        </div>
-      </div>
 
-      <div class="summary">
-        <span>Статей в выборке: <strong id="total-articles">0</strong></span>
-        <span>Суммарные открытия: <strong id="total-views">0</strong></span>
-        <span>Суммарный бюджет: <strong id="total-cost">0</strong> ₽</span>
-        <span>CPM по выборке: <strong id="total-cpm">0</strong> ₽ / 1000 откр.</span>
-        <span>Средние открытия: <strong id="avg-views">0</strong></span>
-      </div>
-    </section>
+        <!-- Добавить статью -->
+        <section class="card">
+          <h3>Добавить статью</h3>
+          <form id="add-form" class="form-grid">
+            <label>
+              Ссылка на публикацию VC.ru
+              <input
+                type="url"
+                id="article-url"
+                placeholder="https://vc.ru/..."
+                required
+              />
+            </label>
 
-    <section class="card">
-      <div class="table-header">
-        <h2>Список статей</h2>
-        <button id="refresh-all">Обновить все</button>
-      </div>
-      <div class="table-wrapper">
-        <table id="articles-table">
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>Заголовок</th>
-              <th>Ссылка</th>
-              <th>Дата публикации</th>
-              <th>Открытия</th>
-              <th>Стоимость, ₽</th>
-              <th>CPM, ₽ / 1000 откр.</th>
-              <th>Обновлено</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody id="articles-body">
-            <!-- строки подгружаются через JS -->
-          </tbody>
-        </table>
-      </div>
-    </section>
-  </div>
+            <label>
+              Стоимость размещения (₽)
+              <input
+                type="number"
+                id="article-cost"
+                placeholder="Например, 15000"
+                min="0"
+                step="1"
+                required
+              />
+            </label>
 
-  <script src="app.js"></script>
-</body>
+            <button type="submit" id="add-btn">Добавить и подтянуть статистику</button>
+          </form>
+
+          <p id="add-error" class="error"></p>
+        </section>
+
+        <!-- Фильтр -->
+        <section class="card">
+          <h3>Фильтр по периоду</h3>
+          <div class="filter-grid">
+            <label>
+              С
+              <input type="date" id="date-from" />
+            </label>
+            <label>
+              По
+              <input type="date" id="date-to" />
+            </label>
+            <label>
+              Месяц
+              <select id="month-select">
+                <option value="all">Все</option>
+                <option value="1">Январь</option>
+                <option value="2">Февраль</option>
+                <option value="3">Март</option>
+                <option value="4">Апрель</option>
+                <option value="5">Май</option>
+                <option value="6">Июнь</option>
+                <option value="7">Июль</option>
+                <option value="8">Август</option>
+                <option value="9">Сентябрь</option>
+                <option value="10">Октябрь</option>
+                <option value="11">Ноябрь</option>
+                <option value="12">Декабрь</option>
+              </select>
+            </label>
+            <button id="reset-filter-btn" class="btn-secondary">Сбросить</button>
+          </div>
+        </section>
+
+        <!-- Сводка -->
+        <section class="card stats-card">
+          <h3>Сводная статистика</h3>
+          <div class="stats-grid">
+            <div class="stat">
+              <div class="stat-label">Публикаций в выборке</div>
+              <div class="stat-value" id="stat-count">0</div>
+            </div>
+            <div class="stat">
+              <div class="stat-label">Всего открытий поста</div>
+              <div class="stat-value" id="stat-opens">0</div>
+            </div>
+            <div class="stat">
+              <div class="stat-label">Общий бюджет (₽)</div>
+              <div class="stat-value" id="stat-budget">0</div>
+            </div>
+            <div class="stat">
+              <div class="stat-label">Средний CPM (₽ за 1000 открытий)</div>
+              <div class="stat-value" id="stat-cpm">—</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Таблица -->
+        <section class="card">
+          <h3>Список статей</h3>
+          <div class="table-wrapper">
+            <table class="articles-table">
+              <thead>
+                <tr>
+                  <th>Дата публикации</th>
+                  <th>Заголовок</th>
+                  <th>Ссылка</th>
+                  <th>Открытия</th>
+                  <th>Стоимость (₽)</th>
+                  <th>CPM (₽)</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="articles-body"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
 </html>
