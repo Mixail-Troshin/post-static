@@ -1,17 +1,17 @@
 {
   "name": "vc-tracker",
   "version": "1.0.0",
-  "description": "API для статистики статей vc.ru",
-  "main": "server.js",
+  "description": "Post Static — трекер публикаций VC.ru",
   "type": "module",
+  "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
-    "cheerio": "^1.0.0",
+    "cheerio": "^1.0.0-rc.12",
     "cors": "^2.8.5",
-    "express": "^4.19.0",
-    "node-cron": "^3.0.3",
+    "express": "^4.19.2",
+    "express-session": "^1.17.3",
     "node-fetch": "^3.3.2"
   }
 }
