@@ -7,10 +7,17 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <main class="container">
-    <h1>VC Metrics</h1>
+  <header class="topbar">
+    <div class="brand">VC Metrics</div>
+    <div class="userbox">
+      <span id="whoami">—</span>
+      <button id="logoutBtn" class="btn btn-secondary">Выйти</button>
+    </div>
+  </header>
 
+  <main class="container">
     <section class="card">
+      <h2 class="h2">Метрики</h2>
       <div class="row">
         <div class="col">
           <label>Выбрать статью</label>
@@ -76,8 +83,19 @@
       </div>
     </section>
 
-    <section class="card tip">
-      <div>На VC: <span class="badge">views</span> — показы в ленте, <span class="badge">hits</span> — открытия материала.</div>
+    <section id="adminPanel" class="card" style="display:none;">
+      <h2 class="h2">Управление доступом (только админ)</h2>
+      <div class="row">
+        <div class="col">
+          <label>E-mail для доступа</label>
+          <input id="inviteEmail" class="input" type="email" placeholder="user@example.com" />
+        </div>
+        <div class="col" style="align-self:flex-end;">
+          <button id="inviteBtn" class="btn">Выдать доступ</button>
+          <button id="resetBtn" class="btn btn-secondary">Сбросить пароль</button>
+        </div>
+      </div>
+      <div id="adminMsg" class="status muted">Введите e-mail и нажмите кнопку.</div>
     </section>
   </main>
 
