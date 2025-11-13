@@ -12,11 +12,13 @@ process.on('unhandledRejection', e => console.error('UNHANDLED REJECTION:', e));
 process.on('uncaughtException', e => console.error('UNCAUGHT EXCEPTION:', e));
 
 const FileStore = FileStoreFactory(session);
+
+// --- paths ---
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const publicDir = path.join(__dirname, 'public');
 
-// ---- config ----
+// --- config (опциональный config.json) ---
 const DEFAULTS = {
   port: 3000,
   adminLogin: 'admin',
@@ -24,6 +26,7 @@ const DEFAULTS = {
   sessionSecret: 'post-static-secret',
   dataDir: path.join(__dirname, 'data')
 };
+
 let CONFIG = { ...DEFAULTS };
 try {
   const raw = await fs.readFile(path.join(__dirname, 'config.json'), 'utf-8');
@@ -31,7 +34,7 @@ try {
   CONFIG = { ...CONFIG, ...userCfg, dataDir: path.resolve(__dirname, userCfg.dataDir || DEFAULTS.dataDir) };
 } catch {}
 
-// ---- storage prep (fallback в /tmp на Render) ----
+// --- ensure data + sessions (fallback в /tmp для Render и др.) ---
 async function ensureWritableDir(dir) {
   try {
     await fs.mkdir(dir, { recursive: true });
@@ -63,7 +66,7 @@ async function saveArticles(list) {
   await fs.writeFile(ARTICLES_FILE, JSON.stringify(list, null, 2), 'utf-8');
 }
 
-// ---- VC.ru parser ----
+// --- VC.ru parser (title, publishedAt, opens) ---
 async function fetchPostStats(url) {
   const res = await fetch(url, {
     headers: {
@@ -79,14 +82,14 @@ async function fetchPostStats(url) {
   const timeEl = $('.content-header__date time').first();
   const publishedAt = timeEl.attr('datetime') || timeEl.text().trim() || null;
 
-  // используем видимый счётчик «открытий» рядом с глазом
+  // видимый рядом счётчик (принимаем как «открытия»)
   const viewsText = $('.content-footer-button__label').first().text().trim();
   const opens = Number(viewsText.replace(/\s/g, '')) || 0;
 
   return { title, publishedAt, opens };
 }
 
-// ---- app ----
+// --- app ---
 const app = express();
 app.set('trust proxy', 1);
 
@@ -106,24 +109,27 @@ app.use(
     resave: false,
     saveUninitialized: false,
     cookie: {
-      // по умолчанию — только до закрытия браузера
+      // без maxAge → живёт до закрытия браузера
       sameSite: 'lax',
       secure: false
     }
   })
 );
 
-// ---- static (/static) ----
-app.use('/static', express.static(publicDir, {
-  maxAge: '1h',
-  etag: true,
-  lastModified: true,
-  setHeaders: (res, filePath) => {
-    if (filePath.endsWith('.css')) res.setHeader('Content-Type', 'text/css; charset=utf-8');
-    if (filePath.endsWith('.js'))  res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
-  }
-}));
-// предохранители
+// == СТАТИКА под /static ==
+app.use(
+  '/static',
+  express.static(publicDir, {
+    maxAge: '1h',
+    etag: true,
+    lastModified: true,
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith('.css')) res.setHeader('Content-Type', 'text/css; charset=utf-8');
+      if (filePath.endsWith('.js'))  res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+    }
+  })
+);
+// safety routes
 app.get('/static/styles.css', (req, res) => {
   res.type('text/css');
   res.sendFile(path.join(publicDir, 'styles.css'));
@@ -133,7 +139,7 @@ app.get('/static/app.js', (req, res) => {
   res.sendFile(path.join(publicDir, 'app.js'));
 });
 
-// ---- auth ----
+// == Auth ==
 function requireAuth(req, res, next) {
   if (req.session && req.session.auth) return next();
   return res.status(401).json({ error: 'Не авторизован' });
@@ -149,8 +155,10 @@ app.post('/api/login', (req, res) => {
     req.session.regenerate(err => {
       if (err) return res.status(500).json({ error: 'Ошибка сессии' });
       req.session.auth = true;
+
+      // remember → 7 дней; иначе — до закрытия
       if (remember) {
-        req.session.cookie.maxAge = 7 * 24 * 60 * 60 * 1000; // 7 дней
+        req.session.cookie.maxAge = 7 * 24 * 60 * 60 * 1000;
       } else {
         delete req.session.cookie.maxAge;
         req.session.cookie.expires = false;
@@ -169,7 +177,7 @@ app.post('/api/logout', (req, res) => {
   });
 });
 
-// ---- API: articles ----
+// == Articles API ==
 app.get('/api/articles', requireAuth, async (_req, res) => {
   res.json(await loadArticles());
 });
@@ -180,6 +188,7 @@ app.post('/api/articles', requireAuth, async (req, res) => {
     if (!url || !/^https?:\/\//i.test(url)) {
       return res.status(400).json({ error: 'Неверная ссылка' });
     }
+
     const list = await loadArticles();
     const stats = await fetchPostStats(url);
 
@@ -193,8 +202,8 @@ app.post('/api/articles', requireAuth, async (req, res) => {
       id,
       url,
       title: stats.title,
-      publishedAt: stats.publishedAt, // дата публикации
-      updatedAt: nowIso,              // дата последнего обновления
+      publishedAt: stats.publishedAt,
+      updatedAt: nowIso,
       opens,
       cost: costNum,
       cpm
@@ -209,7 +218,6 @@ app.post('/api/articles', requireAuth, async (req, res) => {
   }
 });
 
-// ручное обновление одной статьи (перетянуть свежие цифры и updatedAt)
 app.post('/api/articles/:id/refresh', requireAuth, async (req, res) => {
   const id = Number(req.params.id);
   const list = await loadArticles();
@@ -248,18 +256,19 @@ app.delete('/api/articles/:id', requireAuth, async (req, res) => {
 // health
 app.get('/health', (_req, res) => res.send('ok'));
 
-// SPA entry
+// == SPA entry ==
 app.get(['/', '/post-static'], (_req, res) => {
   res.set('Cache-Control', 'no-store');
   res.sendFile(path.join(publicDir, 'index.html'));
 });
 
-// SPA fallback (в самом конце!)
+// == SPA fallback (в самом конце!) ==
 app.get(/^\/(post-static\/)?(?!api\/)(?!static\/)(?!.*\..*$).*/, (_req, res) => {
   res.set('Cache-Control', 'no-store');
   res.sendFile(path.join(publicDir, 'index.html'));
 });
 
+// start
 const PORT = Number(process.env.PORT) || CONFIG.port || 3000;
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server started on http://localhost:${PORT}`);
