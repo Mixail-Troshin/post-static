@@ -3,10 +3,13 @@ const apiBase = ''; // тот же домен, где крутится беке�
 const tableBody = document.getElementById('articles-body');
 const totalArticlesEl = document.getElementById('total-articles');
 const totalViewsEl = document.getElementById('total-views');
+const totalCostEl = document.getElementById('total-cost');
+const totalCpmEl = document.getElementById('total-cpm');
 const avgViewsEl = document.getElementById('avg-views');
 
 const form = document.getElementById('add-form');
 const urlInput = document.getElementById('article-url');
+const costInput = document.getElementById('article-cost');
 const formMessage = document.getElementById('form-message');
 
 const refreshAllBtn = document.getElementById('refresh-all');
@@ -17,8 +20,8 @@ const applyFilterBtn = document.getElementById('apply-filter');
 const resetFilterBtn = document.getElementById('reset-filter');
 const quickFilterChips = document.querySelectorAll('.chip[data-filter]');
 
-let allArticles = []; // все статьи из API
-let filteredArticles = []; // статьи после фильтра
+let allArticles = [];
+let filteredArticles = [];
 
 // ====== helpers ======
 
@@ -43,6 +46,26 @@ function parseISODate(dateStr) {
   return d;
 }
 
+function toNumberOrNull(value) {
+  if (value == null) return null;
+  if (typeof value === 'number') return Number.isNaN(value) ? null : value;
+  const num = parseFloat(String(value).replace(',', '.'));
+  return Number.isNaN(num) ? null : num;
+}
+
+function formatMoney(value) {
+  const num = toNumberOrNull(value);
+  if (num == null) return '—';
+  return num.toLocaleString('ru-RU', { maximumFractionDigits: 2 });
+}
+
+function calcCpm(cost, views) {
+  const c = toNumberOrNull(cost);
+  const v = toNumberOrNull(views);
+  if (c == null || v == null || v === 0) return null;
+  return (c / v) * 1000;
+}
+
 // ====== API ======
 
 async function fetchArticles() {
@@ -51,11 +74,11 @@ async function fetchArticles() {
   return res.json();
 }
 
-async function addArticle(url) {
+async function addArticle(url, cost) {
   const res = await fetch(`${apiBase}/api/articles`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ url })
+    body: JSON.stringify({ url, cost })
   });
   const data = await res.json();
   if (!res.ok) {
@@ -103,18 +126,13 @@ function applyFilter() {
   const from = filterFromInput.value ? new Date(filterFromInput.value) : null;
   const to = filterToInput.value ? new Date(filterToInput.value) : null;
 
-  if (from) {
-    from.setHours(0, 0, 0, 0);
-  }
-  if (to) {
-    to.setHours(23, 59, 59, 999);
-  }
+  if (from) from.setHours(0, 0, 0, 0);
+  if (to) to.setHours(23, 59, 59, 999);
 
   filteredArticles = allArticles.filter((article) => {
-    // берём ISO-дату, если есть
     const dateSource = article.publishedDatetime || article.publishedAt;
     const d = parseISODate(dateSource);
-    if (!d) return true; // если даты нет или не распарсилась — не фильтруем
+    if (!d) return true;
 
     if (from && d < from) return false;
     if (to && d > to) return false;
@@ -126,7 +144,6 @@ function applyFilter() {
 }
 
 function setQuickFilter(type) {
-  // сбрасываем активные чипы
   quickFilterChips.forEach((chip) => chip.classList.remove('active'));
 
   const chip = document.querySelector(`.chip[data-filter="${type}"]`);
@@ -143,9 +160,9 @@ function setQuickFilter(type) {
     from = new Date(now.getFullYear(), now.getMonth(), 1);
     to = new Date(now.getFullYear(), now.getMonth() + 1, 0);
   } else if (type === 'last-month') {
-    const month = now.getMonth() - 1;
-    const year = month < 0 ? now.getFullYear() - 1 : now.getFullYear();
-    const realMonth = (month + 12) % 12;
+    const m = now.getMonth() - 1;
+    const year = m < 0 ? now.getFullYear() - 1 : now.getFullYear();
+    const realMonth = (m + 12) % 12;
     from = new Date(year, realMonth, 1);
     to = new Date(year, realMonth + 1, 0);
   }
@@ -164,6 +181,7 @@ function renderArticles(articles) {
   tableBody.innerHTML = '';
 
   articles.forEach((article, index) => {
+    const cpm = calcCpm(article.cost, article.views);
     const tr = document.createElement('tr');
 
     tr.innerHTML = `
@@ -176,6 +194,8 @@ function renderArticles(articles) {
       </td>
       <td class="small">${article.publishedAt || '—'}</td>
       <td class="views">${article.views ?? '—'}</td>
+      <td class="views">${formatMoney(article.cost)}</td>
+      <td class="views">${cpm == null ? '—' : formatMoney(cpm)}</td>
       <td class="small">${formatDateTime(article.lastUpdated)}</td>
       <td class="actions">
         <button class="table-row-button" data-action="refresh" data-id="${article.id}">Обновить</button>
@@ -190,16 +210,28 @@ function renderArticles(articles) {
 function renderStats(articles) {
   const totalArticles = articles.length;
   let totalViews = 0;
+  let totalCost = 0;
 
   articles.forEach((a) => {
-    totalViews += a.views || 0;
+    const views = toNumberOrNull(a.views) || 0;
+    const cost = toNumberOrNull(a.cost) || 0;
+    totalViews += views;
+    totalCost += cost;
   });
 
   totalArticlesEl.textContent = totalArticles;
   totalViewsEl.textContent = totalViews.toLocaleString('ru-RU');
+  totalCostEl.textContent = totalCost.toLocaleString('ru-RU', {
+    maximumFractionDigits: 2
+  });
 
   const avg = totalArticles ? Math.round(totalViews / totalArticles) : 0;
   avgViewsEl.textContent = avg.toLocaleString('ru-RU');
+
+  const totalCpm = totalViews ? (totalCost / totalViews) * 1000 : 0;
+  totalCpmEl.textContent = totalViews
+    ? totalCpm.toLocaleString('ru-RU', { maximumFractionDigits: 2 })
+    : '0';
 }
 
 // ====== основная логика ======
@@ -208,7 +240,6 @@ async function loadAndRender() {
   try {
     const data = await fetchArticles();
     allArticles = data;
-    // по умолчанию — "всё время"
     setQuickFilter('all');
   } catch (e) {
     console.error(e);
@@ -223,13 +254,22 @@ form.addEventListener('submit', async (e) => {
   formMessage.className = 'message';
 
   const url = urlInput.value.trim();
+  let costVal = costInput.value.trim();
+
+  let cost = null;
+  if (costVal) {
+    const num = parseFloat(costVal.replace(',', '.'));
+    if (!Number.isNaN(num)) cost = num;
+  }
+
   if (!url) return;
 
   try {
-    await addArticle(url);
+    await addArticle(url, cost);
     formMessage.textContent = 'Статья добавлена и загружена ✅';
     formMessage.classList.add('success');
     urlInput.value = '';
+    costInput.value = '';
 
     await loadAndRender();
   } catch (err) {
