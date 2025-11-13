@@ -57,12 +57,19 @@ body {
   font-size: 14px;
 }
 
+button {
+  font-family: inherit;
+}
+
 #add-form button,
 #refresh-all,
-.table-row-button {
+.table-row-button,
+#apply-filter,
+#reset-filter,
+.chip {
   border-radius: 999px;
   border: none;
-  padding: 10px 16px;
+  padding: 8px 14px;
   font-size: 14px;
   cursor: pointer;
   background: #2563eb;
@@ -73,7 +80,10 @@ body {
 
 #add-form button:hover,
 #refresh-all:hover,
-.table-row-button:hover {
+.table-row-button:hover,
+#apply-filter:hover,
+#reset-filter:hover,
+.chip:hover {
   background: #1d4ed8;
   transform: translateY(-1px);
   box-shadow: 0 6px 18px rgba(37, 99, 235, 0.45);
@@ -81,9 +91,23 @@ body {
 
 #add-form button:active,
 #refresh-all:active,
-.table-row-button:active {
+.table-row-button:active,
+#apply-filter:active,
+#reset-filter:active,
+.chip:active {
   transform: translateY(0);
   box-shadow: 0 2px 8px rgba(37, 99, 235, 0.35);
+}
+
+.secondary {
+  background: #e5e7eb;
+  color: #111827;
+  box-shadow: none;
+}
+
+.secondary:hover {
+  background: #d1d5db;
+  box-shadow: none;
 }
 
 .message {
@@ -110,9 +134,10 @@ body {
 
 .summary {
   display: flex;
+  flex-wrap: wrap;
   gap: 16px;
   font-size: 14px;
-  margin-bottom: 10px;
+  margin-top: 10px;
   color: #444;
 }
 
@@ -179,7 +204,99 @@ td.actions {
 }
 
 .table-row-button {
-  padding: 6px 12px;
+  padding: 6px 10px;
   font-size: 12px;
   box-shadow: none;
+  margin-left: 4px;
+}
+
+.table-row-button.delete {
+  background: #ef4444;
+}
+
+.table-row-button.delete:hover {
+  background: #dc2626;
+}
+
+.filters-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.filters-row {
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.field label {
+  font-size: 13px;
+  color: #555;
+}
+
+.field input[type="date"] {
+  padding: 6px 10px;
+  font-size: 13px;
+  border-radius: 999px;
+  border: 1px solid #d0d4dd;
+  min-width: 140px;
+}
+
+.field-buttons {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.quick-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip {
+  padding: 6px 10px;
+  font-size: 12px;
+  background: #e5e7eb;
+  color: #111827;
+  box-shadow: none;
+}
+
+.chip:hover {
+  background: #d1d5db;
+}
+
+.chip.active {
+  background: #2563eb;
+  color: #fff;
+}
+
+@media (max-width: 700px) {
+  #add-form {
+    flex-direction: column;
+  }
+
+  .filters-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .field-buttons {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .table-wrapper {
+    overflow-x: auto;
+  }
 }
