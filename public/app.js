@@ -1,368 +1,334 @@
-const apiBase = ''; // тот же домен, где крутится бекенд
+// app.js
 
-const tableBody = document.getElementById('articles-body');
-const totalArticlesEl = document.getElementById('total-articles');
-const totalViewsEl = document.getElementById('total-views');
-const totalCostEl = document.getElementById('total-cost');
-const totalCpmEl = document.getElementById('total-cpm');
-const avgViewsEl = document.getElementById('avg-views');
+let ALL_ARTICLES = [];
 
-const form = document.getElementById('add-form');
-const urlInput = document.getElementById('article-url');
-const costInput = document.getElementById('article-cost');
-const formMessage = document.getElementById('form-message');
+// --------- УТИЛИТЫ ----------
 
-const refreshAllBtn = document.getElementById('refresh-all');
-
-const filterFromInput = document.getElementById('filter-from');
-const filterToInput = document.getElementById('filter-to');
-const applyFilterBtn = document.getElementById('apply-filter');
-const resetFilterBtn = document.getElementById('reset-filter');
-const quickFilterChips = document.querySelectorAll('.chip[data-filter]');
-
-let allArticles = [];
-let filteredArticles = [];
-
-// ====== helpers ======
-
-function formatDateTime(iso) {
+function formatDate(iso) {
   if (!iso) return '—';
   const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString('ru-RU');
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString('ru-RU');
 }
 
-function escapeHtml(str) {
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+function formatNumber(x) {
+  if (x == null) return '—';
+  return x.toLocaleString('ru-RU');
 }
 
-function parseISODate(dateStr) {
-  if (!dateStr) return null;
-  const d = new Date(dateStr);
-  if (Number.isNaN(d.getTime())) return null;
-  return d;
-}
-
-function toNumberOrNull(value) {
-  if (value == null) return null;
-  if (typeof value === 'number') return Number.isNaN(value) ? null : value;
-  const num = parseFloat(String(value).replace(',', '.'));
-  return Number.isNaN(num) ? null : num;
-}
-
-function formatMoney(value) {
-  const num = toNumberOrNull(value);
-  if (num == null) return '—';
-  return num.toLocaleString('ru-RU', { maximumFractionDigits: 2 });
-}
-
-function calcCpm(cost, views) {
-  const c = toNumberOrNull(cost);
-  const v = toNumberOrNull(views);
-  if (c == null || v == null || v === 0) return null;
-  return (c / v) * 1000;
-}
-
-// ====== API ======
-
-async function fetchArticles() {
-  const res = await fetch(`${apiBase}/api/articles`);
-  if (!res.ok) throw new Error('Failed to load articles');
-  return res.json();
-}
-
-async function addArticle(url, cost) {
-  const res = await fetch(`${apiBase}/api/articles`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ url, cost })
+function formatMoney(x) {
+  if (x == null) return '—';
+  return x.toLocaleString('ru-RU', {
+    maximumFractionDigits: 0,
   });
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.error || 'Ошибка при добавлении статьи');
-  }
-  return data;
 }
 
-async function refreshArticle(id) {
-  const res = await fetch(`${apiBase}/api/articles/${id}/refresh`, {
-    method: 'POST'
-  });
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.error || 'Ошибка при обновлении статьи');
+// --------- АВТОРИЗАЦИЯ ----------
+
+async function checkAuth() {
+  try {
+    const res = await fetch('/api/auth/status');
+    if (res.ok) {
+      showApp();
+      await loadArticles();
+    } else {
+      showLogin();
+    }
+  } catch (e) {
+    console.error('Ошибка проверки авторизации', e);
+    showLogin();
   }
-  return data;
 }
 
-async function refreshAll() {
-  const res = await fetch(`${apiBase}/api/refresh-all`, {
-    method: 'POST'
-  });
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.error || 'Ошибка при обновлении всех статей');
-  }
-  return data;
+function showLogin() {
+  document.getElementById('login-screen').classList.remove('hidden');
+  document.getElementById('app').classList.add('hidden');
 }
 
-async function deleteArticle(id) {
-  const res = await fetch(`${apiBase}/api/articles/${id}`, {
-    method: 'DELETE'
-  });
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.error || 'Ошибка при удалении статьи');
-  }
-  return data;
+function showApp() {
+  document.getElementById('login-screen').classList.add('hidden');
+  document.getElementById('app').classList.remove('hidden');
 }
 
-// ====== фильтрация ======
+async function handleLogin(event) {
+  event.preventDefault();
+  const login = document.getElementById('login').value.trim();
+  const password = document.getElementById('password').value.trim();
+  const errorEl = document.getElementById('login-error');
+  errorEl.textContent = '';
 
-function applyFilter() {
-  const from = filterFromInput.value ? new Date(filterFromInput.value) : null;
-  const to = filterToInput.value ? new Date(filterToInput.value) : null;
+  try {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ login, password }),
+    });
 
-  if (from) from.setHours(0, 0, 0, 0);
-  if (to) to.setHours(23, 59, 59, 999);
+    if (res.ok) {
+      showApp();
+      await loadArticles();
+    } else {
+      errorEl.textContent = 'Неверный логин или пароль';
+    }
+  } catch (e) {
+    console.error(e);
+    errorEl.textContent = 'Ошибка при попытке входа';
+  }
+}
 
-  filteredArticles = allArticles.filter((article) => {
-    const dateSource = article.publishedDatetime || article.publishedAt;
-    const d = parseISODate(dateSource);
-    if (!d) return true;
+async function handleLogout() {
+  try {
+    await fetch('/api/auth/logout', { method: 'POST' });
+  } catch (e) {
+    console.warn('Ошибка логаута', e);
+  }
+  showLogin();
+}
+
+// --------- РАБОТА СО СТАТЬЯМИ ----------
+
+async function loadArticles() {
+  try {
+    const res = await fetch('/api/articles');
+    if (!res.ok) {
+      if (res.status === 401) {
+        showLogin();
+        return;
+      }
+      throw new Error('Ошибка загрузки статей');
+    }
+
+    ALL_ARTICLES = await res.json();
+    renderArticles();
+  } catch (e) {
+    console.error(e);
+    alert('Не удалось загрузить статьи');
+  }
+}
+
+function getFilteredArticles() {
+  const fromVal = document.getElementById('from').value;
+  const toVal = document.getElementById('to').value;
+  const monthVal = document.getElementById('month').value;
+
+  let from = fromVal ? new Date(fromVal) : null;
+  let to = toVal ? new Date(toVal) : null;
+
+  if (to) {
+    // включительно конец дня
+    to.setHours(23, 59, 59, 999);
+  }
+
+  return ALL_ARTICLES.filter((a) => {
+    if (!a.publishedAt) return true;
+    const d = new Date(a.publishedAt);
 
     if (from && d < from) return false;
     if (to && d > to) return false;
+
+    if (monthVal !== '') {
+      const m = d.getMonth();
+      if (m !== Number(monthVal)) return false;
+    }
+
     return true;
   });
-
-  renderArticles(filteredArticles);
-  renderStats(filteredArticles);
 }
 
-function setQuickFilter(type) {
-  quickFilterChips.forEach((chip) => chip.classList.remove('active'));
+function renderArticles() {
+  const tbody = document.getElementById('articles-tbody');
+  tbody.innerHTML = '';
 
-  const chip = document.querySelector(`.chip[data-filter="${type}"]`);
-  if (chip) chip.classList.add('active');
+  const filtered = getFilteredArticles();
 
-  const now = new Date();
-  let from = null;
-  let to = null;
+  let totalOpens = 0;
+  let totalCost = 0;
+  let cpmValues = 0;
+  let cpmCount = 0;
 
-  if (type === 'all') {
-    filterFromInput.value = '';
-    filterToInput.value = '';
-  } else if (type === 'this-month') {
-    from = new Date(now.getFullYear(), now.getMonth(), 1);
-    to = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-  } else if (type === 'last-month') {
-    const m = now.getMonth() - 1;
-    const year = m < 0 ? now.getFullYear() - 1 : now.getFullYear();
-    const realMonth = (m + 12) % 12;
-    from = new Date(year, realMonth, 1);
-    to = new Date(year, realMonth + 1, 0);
-  }
-
-  if (from && to) {
-    filterFromInput.value = from.toISOString().slice(0, 10);
-    filterToInput.value = to.toISOString().slice(0, 10);
-  }
-
-  applyFilter();
-}
-
-// ====== рендер ======
-
-function renderArticles(articles) {
-  tableBody.innerHTML = '';
-
-  articles.forEach((article, index) => {
-    const cpm = calcCpm(article.cost, article.views);
+  for (const article of filtered) {
     const tr = document.createElement('tr');
 
+    const published = formatDate(article.publishedAt);
+    const opens = article.opens ?? article.views ?? 0;
+    const cost = article.cost || 0;
+    const cpm =
+      opens > 0 && cost > 0 ? +(cost / (opens / 1000)).toFixed(2) : null;
+
+    totalOpens += opens;
+    totalCost += cost;
+    if (cpm != null) {
+      cpmValues += cpm;
+      cpmCount += 1;
+    }
+
     tr.innerHTML = `
-      <td>${index + 1}</td>
-      <td>${article.title ? escapeHtml(article.title) : '—'}</td>
-      <td class="small">
-        <a href="${article.url}" target="_blank" rel="noopener noreferrer">
-          открыть
-        </a>
+      <td>${published}</td>
+      <td>${article.title ? article.title : '—'}</td>
+      <td>
+        <a href="${article.url}" target="_blank" rel="noopener noreferrer">Открыть</a>
       </td>
-      <td class="small">${article.publishedAt || '—'}</td>
-      <td class="views">${article.views ?? '—'}</td>
-      <td class="views">${formatMoney(article.cost)}</td>
-      <td class="views">${cpm == null ? '—' : formatMoney(cpm)}</td>
-      <td class="small">${formatDateTime(article.lastUpdated)}</td>
-      <td class="actions">
-        <button class="table-row-button" data-action="refresh" data-id="${article.id}">Обновить</button>
-        <button class="table-row-button delete" data-action="delete" data-id="${article.id}">Удалить</button>
+      <td>${formatNumber(opens)}</td>
+      <td>${formatMoney(cost)}</td>
+      <td>${cpm != null ? formatNumber(cpm) : '—'}</td>
+      <td>
+        <button class="btn danger small" data-id="${article.id}">Удалить</button>
       </td>
     `;
 
-    tableBody.appendChild(tr);
+    tbody.appendChild(tr);
+  }
+
+  // обновляем сводку
+  document.getElementById('stat-count').textContent = filtered.length;
+  document.getElementById('stat-opens').textContent = formatNumber(totalOpens);
+  document.getElementById('stat-cost').textContent = formatMoney(totalCost);
+
+  const avgCpm = cpmCount > 0 ? +(cpmValues / cpmCount).toFixed(2) : null;
+  document.getElementById('stat-cpm').textContent =
+    avgCpm != null ? formatNumber(avgCpm) : '—';
+
+  // навешиваем обработчики удаления
+  tbody.querySelectorAll('button[data-id]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = btn.getAttribute('data-id');
+      deleteArticle(id);
+    });
   });
 }
 
-function renderStats(articles) {
-  const totalArticles = articles.length;
-  let totalViews = 0;
-  let totalCost = 0;
+async function deleteArticle(id) {
+  if (!confirm('Удалить эту статью из списка?')) return;
 
-  articles.forEach((a) => {
-    const views = toNumberOrNull(a.views) || 0;
-    const cost = toNumberOrNull(a.cost) || 0;
-    totalViews += views;
-    totalCost += cost;
-  });
-
-  totalArticlesEl.textContent = totalArticles;
-  totalViewsEl.textContent = totalViews.toLocaleString('ru-RU');
-  totalCostEl.textContent = totalCost.toLocaleString('ru-RU', {
-    maximumFractionDigits: 2
-  });
-
-  const avg = totalArticles ? Math.round(totalViews / totalArticles) : 0;
-  avgViewsEl.textContent = avg.toLocaleString('ru-RU');
-
-  const totalCpm = totalViews ? (totalCost / totalViews) * 1000 : 0;
-  totalCpmEl.textContent = totalViews
-    ? totalCpm.toLocaleString('ru-RU', { maximumFractionDigits: 2 })
-    : '0';
-}
-
-// ====== основная логика ======
-
-async function loadAndRender() {
   try {
-    const data = await fetchArticles();
-    allArticles = data;
-    setQuickFilter('all');
+    const res = await fetch(`/api/articles/${id}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error('Ошибка удаления');
+
+    ALL_ARTICLES = ALL_ARTICLES.filter((a) => a.id !== id);
+    renderArticles();
   } catch (e) {
     console.error(e);
-    alert('Ошибка загрузки статей с сервера');
+    alert('Не удалось удалить статью');
   }
 }
 
-// отправка формы "Добавить статью"
-form.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  formMessage.textContent = '';
-  formMessage.className = 'message';
+async function handleAddArticle(event) {
+  event.preventDefault();
+  const urlInput = document.getElementById('url');
+  const costInput = document.getElementById('cost');
 
   const url = urlInput.value.trim();
-  let costVal = costInput.value.trim();
+  const cost = costInput.value ? Number(costInput.value) : 0;
 
-  let cost = null;
-  if (costVal) {
-    const num = parseFloat(costVal.replace(',', '.'));
-    if (!Number.isNaN(num)) cost = num;
+  if (!url) {
+    alert('Введите ссылку на статью');
+    return;
   }
 
-  if (!url) return;
+  const btn = event.submitter || event.target.querySelector('button[type=submit]');
+  const originalText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Добавляем...';
 
   try {
-    await addArticle(url, cost);
-    formMessage.textContent = 'Статья добавлена и загружена ✅';
-    formMessage.classList.add('success');
+    const res = await fetch('/api/articles', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, cost }),
+    });
+
+    if (!res.ok) {
+      if (res.status === 401) {
+        showLogin();
+        return;
+      }
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || 'Не удалось добавить статью');
+    }
+
+    const article = await res.json();
+    ALL_ARTICLES.push(article);
     urlInput.value = '';
     costInput.value = '';
-
-    await loadAndRender();
-  } catch (err) {
-    console.error(err);
-    formMessage.textContent = err.message || 'Ошибка при добавлении статьи';
-    formMessage.classList.add('error');
-  }
-});
-
-// кнопка "Обновить все"
-refreshAllBtn.addEventListener('click', async () => {
-  refreshAllBtn.disabled = true;
-  const originalText = refreshAllBtn.textContent;
-  refreshAllBtn.textContent = 'Обновляем...';
-
-  try {
-    await refreshAll();
-    await loadAndRender();
+    renderArticles();
   } catch (e) {
     console.error(e);
-    alert('Ошибка при обновлении всех статей');
+    alert(e.message || 'Ошибка при добавлении статьи');
   } finally {
-    refreshAllBtn.disabled = false;
-    refreshAllBtn.textContent = originalText;
+    btn.disabled = false;
+    btn.textContent = originalText;
   }
-});
+}
 
-// кнопки в таблице (обновить / удалить)
-tableBody.addEventListener('click', async (e) => {
-  const btn = e.target.closest('button[data-action]');
-  if (!btn) return;
+async function handleRefreshAll() {
+  if (!confirm('Обновить статистику по всем статьям?')) return;
 
-  const action = btn.dataset.action;
-  const id = btn.dataset.id;
+  const btn = document.getElementById('refresh-btn');
+  const originalText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Обновляем...';
 
-  if (action === 'refresh') {
-    const originalText = btn.textContent;
-    btn.disabled = true;
-    btn.textContent = '...';
-
-    try {
-      await refreshArticle(id);
-      await loadAndRender();
-    } catch (err) {
-      console.error(err);
-      alert('Не удалось обновить статью');
-    } finally {
-      btn.disabled = false;
-      btn.textContent = originalText;
+  try {
+    const res = await fetch('/api/articles/refresh', { method: 'POST' });
+    if (!res.ok) {
+      if (res.status === 401) {
+        showLogin();
+        return;
+      }
+      throw new Error('Не удалось обновить статьи');
     }
+    ALL_ARTICLES = await res.json();
+    renderArticles();
+  } catch (e) {
+    console.error(e);
+    alert(e.message || 'Ошибка при обновлении статей');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalText;
   }
+}
 
-  if (action === 'delete') {
-    const ok = confirm('Удалить эту статью?');
-    if (!ok) return;
+function handleFiltersChange() {
+  renderArticles();
+}
 
-    const originalText = btn.textContent;
-    btn.disabled = true;
-    btn.textContent = '...';
+function handleClearFilters() {
+  document.getElementById('from').value = '';
+  document.getElementById('to').value = '';
+  document.getElementById('month').value = '';
+  renderArticles();
+}
 
-    try {
-      await deleteArticle(id);
-      await loadAndRender();
-    } catch (err) {
-      console.error(err);
-      alert('Не удалось удалить статью');
-    } finally {
-      btn.disabled = false;
-      btn.textContent = originalText;
-    }
-  }
-});
+// --------- INIT ----------
 
-// фильтр: кнопка "Применить"
-applyFilterBtn.addEventListener('click', () => {
-  quickFilterChips.forEach((chip) => chip.classList.remove('active'));
-  applyFilter();
-});
+document.addEventListener('DOMContentLoaded', () => {
+  // логин
+  const loginForm = document.getElementById('login-form');
+  loginForm.addEventListener('submit', handleLogin);
 
-// фильтр: кнопка "Сбросить"
-resetFilterBtn.addEventListener('click', () => {
-  filterFromInput.value = '';
-  filterToInput.value = '';
-  setQuickFilter('all');
-});
+  // logout
+  document.getElementById('logout-btn').addEventListener('click', handleLogout);
 
-// быстрые фильтры
-quickFilterChips.forEach((chip) => {
-  chip.addEventListener('click', () => {
-    const type = chip.dataset.filter;
-    setQuickFilter(type);
+  // форма добавления
+  document
+    .getElementById('add-form')
+    .addEventListener('submit', handleAddArticle);
+
+  // кнопка обновления
+  document
+    .getElementById('refresh-btn')
+    .addEventListener('click', handleRefreshAll);
+
+  // фильтры
+  ['from', 'to', 'month'].forEach((id) => {
+    const el = document.getElementById(id);
+    el.addEventListener('change', handleFiltersChange);
   });
-});
 
-// первая загрузка
-loadAndRender();
+  document
+    .getElementById('clear-filters')
+    .addEventListener('click', handleClearFilters);
+
+  // старт — проверяем авторизацию
+  checkAuth();
+});
