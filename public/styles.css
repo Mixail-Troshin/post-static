@@ -58,6 +58,24 @@ html,body{
 }
 .card--narrow{ max-width:520px; margin:0 auto 16px; }
 
+/* details */
+details.card { overflow: hidden; }
+details.card > summary {
+  cursor: pointer;
+  list-style: none;
+  position: relative;
+}
+details.card > summary::marker { display:none; }
+details.card > summary::after{
+  content: '▾';
+  position: absolute;
+  right: 0;
+  top: 2px;
+  opacity: .6;
+  transition: transform .2s ease;
+}
+details[open].card > summary::after{ transform: rotate(180deg); }
+
 /* Form */
 input,select,button{ font:inherit; }
 input,select{
@@ -75,6 +93,12 @@ input:focus,select:focus{
   box-shadow:0 0 0 3px rgba(37,99,235,.25);
 }
 
+.form-grid{
+  display:grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px,1fr));
+  gap:12px 16px;
+  align-items:end;
+}
 .form--vertical{ display:grid; gap:12px; }
 .form__field{ display:grid; gap:6px; }
 .form__actions{ display:flex; gap:10px; align-items:center; }
@@ -116,14 +140,6 @@ input:focus,select:focus{
 .toolbar__right{ display:flex; align-items:center; gap:10px; }
 .status-label{ font-size:13px; color:var(--muted); }
 
-/* Filter */
-.filter-grid{
-  display:grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px,1fr));
-  gap:12px 16px;
-  align-items:end;
-}
-
 /* Stats */
 .stats-card{
   background:
@@ -163,7 +179,6 @@ input:focus,select:focus{
   background:rgba(59,130,246,.15); color:#bfdbfe; border:1px solid rgba(59,130,246,.35);
 }
 
-/* Checkbox */
 .checkbox{ display:flex; align-items:center; gap:8px; user-select:none; }
 .checkbox input{ width:auto; accent-color: var(--primary); }
 
