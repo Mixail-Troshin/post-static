@@ -1,7 +1,7 @@
 {
-  "name": "vc-tracker",
+  "name": "post-static",
   "version": "1.0.0",
-  "description": "Post Static — трекер публикаций VC.ru",
+  "description": "Трекер платных публикаций VC.ru",
   "type": "module",
   "main": "server.js",
   "scripts": {
