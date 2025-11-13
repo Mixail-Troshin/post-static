@@ -14,6 +14,9 @@ const ROOT = __dirname;
 const PUBLIC = path.join(ROOT, "public");
 const CONFIG_FILE = path.join(ROOT, "config.json");
 const ARTICLES_FILE = path.join(ROOT, "articles.json");
+// ... вверху файла, рядом с helpers:
+const isSecure = (req) =>
+  req.secure || req.headers["x-forwarded-proto"] === "https";
 
 // --- helpers -------------------------------------------------
 async function readJSON(file, fallback) {
@@ -107,6 +110,8 @@ app.use(express.json());
 app.use(cookieParser());
 app.use(express.static(PUBLIC, { extensions: ["html"] }));
 
+
+
 // --- auth ----------------------------------------------------
 app.get("/api/me", async (req, res) => {
   const user = readSession(req);
@@ -117,8 +122,11 @@ app.get("/api/me", async (req, res) => {
 app.post("/api/login", async (req, res) => {
   const { email, password } = req.body || {};
   const cfg = await loadConfig();
-  const user = cfg.users.find(u => u.email.toLowerCase() === String(email || "").toLowerCase());
+  const user = cfg.users.find(
+    u => u.email.toLowerCase() === String(email || "").toLowerCase()
+  );
   if (!user) return res.status(400).json({ error: "Неверные данные" });
+
   const ok = await bcrypt.compare(String(password || ""), user.passwordHash);
   if (!ok) return res.status(400).json({ error: "Неверные данные" });
 
@@ -126,7 +134,7 @@ app.post("/api/login", async (req, res) => {
   res.cookie("sid", sid, {
     httpOnly: true,
     sameSite: "lax",
-    secure: true, // на Render идёт по HTTPS
+    secure: isSecure(req),          // 👈 стабильнее на Render/HTTPS и локально
     maxAge: 7 * 24 * 3600 * 1000
   });
   res.json({ ok: true });
