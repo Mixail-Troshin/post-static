@@ -1,73 +1,126 @@
+// server.js (CommonJS)
 const express = require("express");
-const cookieParser = require("cookie-parser");
+const session = require("express-session");
 const bcrypt = require("bcryptjs");
 const fs = require("fs");
-const fsp = fs.promises;
 const path = require("path");
-const crypto = require("crypto");
 
+// ---------- helpers ----------
+const isProd = process.env.NODE_ENV === "production";
 const PORT = process.env.PORT || 3000;
+const ROOT = __dirname;
+const STORAGE_DIR = path.join(ROOT, "storage");
+const USERS_PATH = path.join(STORAGE_DIR, "users.json");
+const DATA_PATH = path.join(STORAGE_DIR, "data.json");
+
+// обеспечиваем storage
+if (!fs.existsSync(STORAGE_DIR)) fs.mkdirSync(STORAGE_DIR, { recursive: true });
+
+// если нет users.json — создаём с дефолтным админом admin@local / admin
+if (!fs.existsSync(USERS_PATH)) {
+  const defaultAdmin = {
+    id: "u1",
+    email: "admin@local",
+    // это хеш для пароля "admin" (bcrypt, cost 12)
+    passwordHash: "$2b$12$bF9/3pVaCM6L8BGZokmM8ecGfiY/WcKoIa/jv03gRrBTr2VQkVb2C",
+    isAdmin: true
+  };
+  fs.writeFileSync(USERS_PATH, JSON.stringify([defaultAdmin], null, 2));
+}
+
+// если нет data.json — создаём пустую базу
+if (!fs.existsSync(DATA_PATH)) {
+  const init = { placementPrice: 0, items: [] };
+  fs.writeFileSync(DATA_PATH, JSON.stringify(init, null, 2));
+}
+
+function readJSON(p) {
+  try { return JSON.parse(fs.readFileSync(p, "utf8")); }
+  catch { return null; }
+}
+function writeJSON(p, obj) {
+  fs.writeFileSync(p, JSON.stringify(obj, null, 2));
+}
+
+function readUsers() { return readJSON(USERS_PATH) || []; }
+function readData() { return readJSON(DATA_PATH) || { placementPrice: 0, items: [] }; }
+
+function extractIdFromUrl(input) {
+  try {
+    const u = new URL(input);
+    // варианты:
+    // 1) .../marketing/2317921-zapret-...
+    // 2) ...?id=2303745
+    const qid = u.searchParams.get("id");
+    if (qid && /^\d+$/.test(qid)) return Number(qid);
+    const m = u.pathname.match(/\/(\d+)(?:-[^\/?#]+)?(?:[\/?#]|$)/);
+    if (m) return Number(m[1]);
+  } catch { /* noop */ }
+  return null;
+}
+
+async function fetchVCContentById(id) {
+  // Node 18+ — глобальный fetch доступен
+  const url = `https://api.vc.ru/v2.10/content?id=${encodeURIComponent(id)}&markdown=false`;
+  const headers = { "accept": "application/json" };
+
+  // опционально — если задашь переменные окружения, они добавятся:
+  if (process.env.VC_JWT) headers["jwtauthorization"] = `Bearer ${process.env.VC_JWT}`;
+  if (process.env.VC_COOKIES) headers["cookie"] = process.env.VC_COOKIES;
+
+  const res = await fetch(url, { headers });
+  if (!res.ok) throw new Error(`VC API ${res.status} ${res.statusText}`);
+  const json = await res.json();
+  if (!json?.result) throw new Error("VC API: пустой результат");
+  return json.result;
+}
+
+function normalizeItemFromVC(result) {
+  // результат VC ru
+  // берем только необходимое
+  return {
+    id: result.id,
+    url: result.url,
+    title: result.title,
+    date: result.date, // unix seconds
+    counters: {
+      views: result.counters?.views ?? 0, // показы в ленте
+      hits: result.counters?.hits ?? 0,   // открытия статьи
+      comments: result.counters?.comments ?? 0,
+      favorites: result.counters?.favorites ?? 0,
+      reposts: result.counters?.reposts ?? 0
+    },
+    lastUpdated: Date.now()
+  };
+}
+
+// ---------- app ----------
 const app = express();
 app.set("trust proxy", 1);
+app.use(express.json());
 
-const ROOT = __dirname;
-const PUBLIC = path.join(ROOT, "public");
-const CONFIG_FILE = path.join(ROOT, "config.json");
-const ARTICLES_FILE = path.join(ROOT, "articles.json");
-
-
-// --- helpers -------------------------------------------------
-async function readJSON(file, fallback) {
-  try { return JSON.parse(await fsp.readFile(file, "utf8")); }
-  catch { return fallback; }
-}
-async function writeJSON(file, data) {
-  await fsp.writeFile(file, JSON.stringify(data, null, 2), "utf8");
-}
-
-// Инициализация конфигов, если их нет
-async function ensureFiles() {
-  const exists = p => fs.existsSync(p);
-  if (!exists(CONFIG_FILE)) {
-    await writeJSON(CONFIG_FILE, {
-      placementPrice: 15000,
-      users: [
-        {
-          email: "admin@local",
-          // hash для пароля "admin" (bcrypt cost 12):
-          passwordHash:
-            "$2b$12$bF9/3pVaCM6L8BGZokmM8ecGfiY/WcKoIa/jv03gRrBTr2VQkVb2C",
-          isAdmin: true
-        }
-      ]
-    });
+// Сессии
+app.use(session({
+  secret: process.env.SESSION_SECRET || "dev_secret_change_me",
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: isProd, // на Render по https будет true
+    maxAge: 30 * 24 * 3600 * 1000
   }
-  if (!exists(ARTICLES_FILE)) await writeJSON(ARTICLES_FILE, []);
-}
-const loadConfig = () => readJSON(CONFIG_FILE, { placementPrice: 0, users: [] });
-const saveConfig = cfg => writeJSON(CONFIG_FILE, cfg);
-const loadArticles = () => readJSON(ARTICLES_FILE, []);
-const saveArticles = arr => writeJSON(ARTICLES_FILE, arr);
+}));
 
-// очень простые сессии в памяти
-const sessions = new Map();
-function createSession(user) {
-  const sid = crypto.randomUUID();
-  sessions.set(sid, { user, exp: Date.now() + 7 * 24 * 3600e3 });
-  return sid;
-}
-function readSession(req) {
-  const sid = req.cookies?.sid;
-  if (!sid) return null;
-  const s = sessions.get(sid);
-  if (!s) return null;
-  if (Date.now() > s.exp) { sessions.delete(sid); return null; }
-  return s.user;
-}
+// статика
+app.use(express.static(path.join(ROOT, "public")));
+
+// ---------- auth middlewares ----------
 function requireAuth(req, res, next) {
-  const user = readSession(req);
-  if (!user) return res.status(401).json({ error: "Unauthorized" });
-  req.user = user;
+  const users = readUsers();
+  const u = users.find(x => x.id === req.session.userId);
+  if (!u) return res.status(401).json({ error: "Unauthorized" });
+  req.user = u;
   next();
 }
 function requireAdmin(req, res, next) {
@@ -75,168 +128,144 @@ function requireAdmin(req, res, next) {
   next();
 }
 
-// извлечение id публикации из URL VC
-function extractIdFromUrl(url) {
-  // берём последнюю группу из цифр
-  const m = String(url).match(/(\d{5,})/g);
-  if (!m || !m.length) return null;
-  return Number(m[m.length - 1]);
-}
-
-// запрос метрик VC по id
-async function fetchVcContent(id) {
-  const u = `https://api.vc.ru/v2.10/content?id=${id}&markdown=false`;
-  const r = await fetch(u, { headers: { accept: "application/json" } });
-  if (!r.ok) throw new Error(`VC ${r.status}`);
-  const j = await r.json();
-  const res = j?.result;
-  if (!res) throw new Error("invalid VC response");
-  return {
-    id: res.id,
-    url: res.url || `https://vc.ru/${id}`,
-    title: res.title || "",
-    date: res.date || null,
-    counters: {
-      views: res.counters?.views ?? null, // показы в ленте
-      hits: res.counters?.hits ?? null    // открытия статьи
-    }
-  };
-}
-
-// --- middleware & static ------------------------------------
-app.use(express.json());
-app.use(cookieParser());
-app.use(express.static(PUBLIC, { extensions: ["html"] }));
-
-app.use(express.json());
-app.use(express.urlencoded({ extended: true })); // 👈 для x-www-form-urlencoded форм
-
-
-
-// --- auth ----------------------------------------------------
-const isSecure = (req) =>
-  req.secure || req.headers["x-forwarded-proto"] === "https";
-
+// ---------- auth routes ----------
 app.post("/api/login", async (req, res) => {
-  // Поддерживаем и JSON, и обычную HTML-форму
-  const email = String(req.body?.email || "").trim().toLowerCase();
-  const password = String(req.body?.password || "");
+  try {
+    const { email, password } = req.body || {};
+    if (!email || !password) {
+      return res.status(400).json({ error: "Введите e-mail и пароль" });
+    }
+    const users = readUsers();
+    const user = users.find(u => u.email?.toLowerCase() === String(email).toLowerCase());
+    if (!user) return res.status(401).json({ error: "Неверный логин/пароль" });
 
-  const cfg = await loadConfig(); // как и раньше
-  const user = cfg.users.find(u => u.email.toLowerCase() === email);
-  if (!user) {
-    // Если пришёл HTML — покажем редирект на /?login=error, иначе JSON
-    if (req.headers.accept?.includes("text/html")) return res.redirect(303, "/?login=error");
-    return res.status(400).json({ error: "Неверные данные" });
+    const ok = await bcrypt.compare(password, user.passwordHash);
+    if (!ok) return res.status(401).json({ error: "Неверный логин/пароль" });
+
+    req.session.userId = user.id;
+    req.session.isAdmin = !!user.isAdmin;
+
+    return res.json({ ok: true, user: { id: user.id, email: user.email, isAdmin: !!user.isAdmin } });
+  } catch (e) {
+    console.error("login error:", e);
+    return res.status(500).json({ error: "Server error" });
   }
-
-  const ok = await bcrypt.compare(password, user.passwordHash);
-  if (!ok) {
-    if (req.headers.accept?.includes("text/html")) return res.redirect(303, "/?login=error");
-    return res.status(400).json({ error: "Неверные данные" });
-  }
-
-  const sid = createSession({ email: user.email, isAdmin: !!user.isAdmin });
-  res.cookie("sid", sid, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: isSecure(req),
-    maxAge: 7 * 24 * 3600 * 1000,
-    path: "/"
-  });
-
-  // Если это обычная форма — редирект на главную уже авторизованным
-  const isFormPost =
-    (req.headers["content-type"] || "").includes("application/x-www-form-urlencoded") ||
-    (req.headers.accept || "").includes("text/html");
-  if (isFormPost) return res.redirect(303, "/");
-
-  // Иначе — отвечаем JSON (для fetch в SPA)
-  res.json({ ok: true });
 });
 
-// --- articles ------------------------------------------------
-app.get("/api/articles", requireAuth, async (req, res) => {
-  const [items, cfg] = await Promise.all([loadArticles(), loadConfig()]);
-  // сортировка по дате публикации (убыв.)
-  items.sort((a, b) => (b.date || 0) - (a.date || 0));
-  res.json({ items, placementPrice: cfg.placementPrice || 0 });
+app.post("/api/logout", (req, res) => {
+  req.session.destroy(() => res.json({ ok: true }));
+});
+
+app.get("/api/me", requireAuth, (req, res) => {
+  const u = req.user;
+  return res.json({ user: { id: u.id, email: u.email, isAdmin: !!u.isAdmin } });
+});
+
+// ---------- data routes ----------
+app.get("/api/articles", requireAuth, (req, res) => {
+  const db = readData();
+  // сортировка по дате публикации (DESC)
+  db.items.sort((a, b) => (b.date || 0) - (a.date || 0));
+  return res.json({ items: db.items, placementPrice: db.placementPrice || 0 });
 });
 
 app.post("/api/articles", requireAuth, async (req, res) => {
-  const url = String(req.body?.url || "").trim();
-  const id = extractIdFromUrl(url);
-  if (!id) return res.status(400).json({ error: "Не удалось извлечь ID из ссылки" });
+  try {
+    const { url } = req.body || {};
+    if (!url) return res.status(400).json({ error: "Url обязателен" });
+    const id = extractIdFromUrl(url);
+    if (!id) return res.status(400).json({ error: "Не удалось извлечь ID из ссылки" });
 
-  const items = await loadArticles();
-  if (items.some(x => Number(x.id) === Number(id))) {
-    return res.status(409).json({ error: "Такая статья уже добавлена" });
+    const db = readData();
+    if (db.items.some(x => Number(x.id) === Number(id))) {
+      return res.status(200).json({ ok: true, duplicate: true });
+    }
+
+    const vc = await fetchVCContentById(id);
+    const item = normalizeItemFromVC(vc);
+
+    db.items.push(item);
+    writeJSON(DATA_PATH, db);
+
+    return res.json({ ok: true, item });
+  } catch (e) {
+    console.error("add article error:", e);
+    return res.status(500).json({ error: e.message || "Ошибка добавления" });
   }
+});
 
-  const meta = await fetchVcContent(id);
-  const item = {
-    ...meta,
-    lastUpdated: Date.now()
-  };
-  items.push(item);
-  await saveArticles(items);
-  res.json({ item });
+app.DELETE("/api/articles/:id", requireAuth, (req, res) => {
+  const id = req.params.id;
+  const db = readData();
+  db.items = db.items.filter(x => String(x.id) !== String(id));
+  writeJSON(DATA_PATH, db);
+  return res.json({ ok: true });
 });
 
 app.patch("/api/articles/:id/refresh", requireAuth, async (req, res) => {
-  const id = Number(req.params.id);
-  const items = await loadArticles();
-  const idx = items.findIndex(x => Number(x.id) === id);
-  if (idx === -1) return res.status(404).json({ error: "Не найдено" });
-  const meta = await fetchVcContent(id);
-  items[idx] = { ...items[idx], ...meta, lastUpdated: Date.now() };
-  await saveArticles(items);
-  res.json({ item: items[idx] });
-});
+  try {
+    const id = Number(req.params.id);
+    const db = readData();
+    const idx = db.items.findIndex(x => Number(x.id) === id);
+    if (idx < 0) return res.status(404).json({ error: "Не найдена" });
 
-app.delete("/api/articles/:id", requireAuth, async (req, res) => {
-  const id = Number(req.params.id);
-  let items = await loadArticles();
-  const before = items.length;
-  items = items.filter(x => Number(x.id) !== id);
-  if (items.length === before) return res.status(404).json({ error: "Не найдено" });
-  await saveArticles(items);
-  res.json({ ok: true });
+    const vc = await fetchVCContentById(id);
+    const fresh = normalizeItemFromVC(vc);
+    // сохраняем исходный url, если VC вернул другой (редирект)
+    fresh.url = db.items[idx].url || fresh.url;
+
+    db.items[idx] = fresh;
+    writeJSON(DATA_PATH, db);
+    return res.json({ ok: true, item: fresh });
+  } catch (e) {
+    console.error("refresh error:", e);
+    return res.status(500).json({ error: e.message || "Ошибка обновления" });
+  }
 });
 
 app.post("/api/refresh-all", requireAuth, async (req, res) => {
-  const items = await loadArticles();
-  const updated = [];
-  for (let it of items) {
-    try {
-      const meta = await fetchVcContent(it.id);
-      updated.push({ ...it, ...meta, lastUpdated: Date.now() });
-    } catch {
-      updated.push(it);
+  try {
+    const db = readData();
+    for (let i = 0; i < db.items.length; i++) {
+      const id = db.items[i].id;
+      try {
+        const vc = await fetchVCContentById(id);
+        const fresh = normalizeItemFromVC(vc);
+        fresh.url = db.items[i].url || fresh.url;
+        db.items[i] = fresh;
+      } catch (e) {
+        console.error("refresh-all item", id, e.message);
+      }
     }
+    writeJSON(DATA_PATH, db);
+    return res.json({ ok: true, count: db.items.length });
+  } catch (e) {
+    console.error("refresh-all error:", e);
+    return res.status(500).json({ error: "Ошибка пакетного обновления" });
   }
-  await saveArticles(updated);
-  res.json({ count: updated.length });
 });
 
-// --- admin ---------------------------------------------------
-app.post("/api/admin/set-price", requireAuth, requireAdmin, async (req, res) => {
-  const p = Number(req.body?.price || 0);
-  if (isNaN(p) || p < 0) return res.status(400).json({ error: "Некорректная цена" });
-  const cfg = await loadConfig();
-  cfg.placementPrice = p;
-  await saveConfig(cfg);
-  res.json({ ok: true, placementPrice: p });
+app.post("/api/admin/set-price", requireAuth, requireAdmin, (req, res) => {
+  const { price } = req.body || {};
+  const db = readData();
+  db.placementPrice = Number(price || 0);
+  writeJSON(DATA_PATH, db);
+  return res.json({ ok: true, placementPrice: db.placementPrice });
 });
 
-// --- fallback index ------------------------------------------
-app.get("*", (req, res) => {
-  const index = path.join(PUBLIC, "index.html");
-  if (fs.existsSync(index)) return res.sendFile(index);
-  res.status(500).type("text/plain").send("Missing public/index.html");
+// ---------- fallback на главную ----------
+app.get("/", (req, res) => {
+  res.sendFile(path.join(ROOT, "public", "index.html"));
 });
 
-// --- start ---------------------------------------------------
-ensureFiles().then(() => {
-  app.listen(PORT, () => console.log(`VC Metrics running on :${PORT}`));
+// ---------- error handler ----------
+app.use((err, req, res, next) => {
+  console.error(err);
+  if (res.headersSent) return;
+  res.status(500).json({ error: "Internal error" });
+});
+
+// ---------- запуск ----------
+app.listen(PORT, () => {
+  console.log(`Server on http://localhost:${PORT}`);
 });
