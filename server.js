@@ -10,18 +10,19 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// --- Конфиг ---
+// --- конфиг ---
 const PORT = process.env.PORT || 3000;
 const ADMIN_LOGIN = process.env.ADMIN_LOGIN || 'admin';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'secret123';
+const SESSION_SECRET = process.env.SESSION_SECRET || 'post-static-secret';
 const ARTICLES_FILE = path.join(__dirname, 'articles.json');
 
-// --- Вспомогательные функции работы с файлом ---
+// --- helpers для файла ---
 async function loadArticles() {
   try {
     const data = await fs.readFile(ARTICLES_FILE, 'utf-8');
     return JSON.parse(data);
-  } catch (_) {
+  } catch {
     return [];
   }
 }
@@ -30,7 +31,7 @@ async function saveArticles(articles) {
   await fs.writeFile(ARTICLES_FILE, JSON.stringify(articles, null, 2), 'utf-8');
 }
 
-// --- парсинг VC.ru (упрощённо: открытий == основной счётчик) ---
+// --- парсинг VC.ru ---
 async function fetchPostStats(url) {
   const res = await fetch(url, {
     headers: {
@@ -40,7 +41,7 @@ async function fetchPostStats(url) {
   });
 
   if (!res.ok) {
-    throw new Error(`Не удалось загрузить страницу, статус ${res.status}`);
+    throw new Error(`Ошибка загрузки страницы: ${res.status}`);
   }
 
   const html = await res.text();
@@ -48,24 +49,22 @@ async function fetchPostStats(url) {
 
   const title = $('h1').first().text().trim() || 'Без названия';
 
-  // дата публикации
+  // время публикации
   const timeEl = $('.content-header__date time').first();
-  const datetimeAttr = timeEl.attr('datetime');
-  const publishedAt = datetimeAttr || timeEl.text().trim() || null;
+  const publishedAt = timeEl.attr('datetime') || timeEl.text().trim() || null;
 
-  // основной счётчик просмотров (к сожалению, модальное окно со статистикой
-  // на бэке не видно, там JS, поэтому берём доступный счётчик)
+  // основной счётчик (тот, что возле иконки просмотра)
   const viewsText = $('.content-footer-button__label').first().text().trim();
   const views = Number(viewsText.replace(/\s/g, '')) || 0;
 
   return {
     title,
     publishedAt,
-    opens: views // используем как "открытия страницы поста"
+    opens: views // используем как "открытия страницы"
   };
 }
 
-// --- Приложение ---
+// --- приложение ---
 const app = express();
 
 app.use(cors());
@@ -74,23 +73,21 @@ app.use(express.urlencoded({ extended: true }));
 
 app.use(
   session({
-    secret: process.env.SESSION_SECRET || 'vc-tracker-secret',
+    secret: SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
     cookie: {
-      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 дней
+      maxAge: 7 * 24 * 60 * 60 * 1000
     }
   })
 );
 
-// статика
+// отдаём статику из public
 app.use(express.static(path.join(__dirname, 'public')));
 
 // --- middleware авторизации ---
 function requireAuth(req, res, next) {
-  if (req.session && req.session.auth) {
-    return next();
-  }
+  if (req.session && req.session.auth) return next();
   return res.status(401).json({ error: 'Не авторизован' });
 }
 
@@ -132,6 +129,7 @@ app.post('/api/articles', requireAuth, async (req, res) => {
     const stats = await fetchPostStats(url);
 
     const id = articles.length ? Math.max(...articles.map(a => a.id)) + 1 : 1;
+
     const costNum = Number(cost) || 0;
     const opens = stats.opens || 0;
     const cpm = opens > 0 ? Math.round((costNum / opens) * 1000) : null;
@@ -175,7 +173,6 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// --- start ---
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server started on http://localhost:${PORT}`);
 });
