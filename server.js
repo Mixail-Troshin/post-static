@@ -13,10 +13,11 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// ====== путь к файлу с данными ======
 const ARTICLES_FILE = path.join(__dirname, 'articles.json');
 
-// ====== helpers для сохранения/загрузки ======
+// =======================
+// Загрузка / сохранение
+// =======================
 
 function loadArticles() {
   if (!fs.existsSync(ARTICLES_FILE)) {
@@ -24,9 +25,11 @@ function loadArticles() {
   }
   const raw = fs.readFileSync(ARTICLES_FILE, 'utf8');
   try {
-    return JSON.parse(raw);
+    const data = JSON.parse(raw);
+    // гарантируем, что это массив
+    return Array.isArray(data) ? data : [];
   } catch (e) {
-    console.error('Failed to parse articles.json, resetting file', e);
+    console.error('Ошибка парсинга articles.json, перезаписываю []', e);
     fs.writeFileSync(ARTICLES_FILE, '[]', 'utf8');
     return [];
   }
@@ -36,7 +39,9 @@ function saveArticles(articles) {
   fs.writeFileSync(ARTICLES_FILE, JSON.stringify(articles, null, 2), 'utf8');
 }
 
-// ====== парсинг vc.ru ======
+// =======================
+// Парсинг статьи vc.ru
+// =======================
 
 async function fetchArticleInfo(url) {
   const res = await fetch(url, {
@@ -66,10 +71,31 @@ async function fetchArticleInfo(url) {
   const publishedTitle = timeEl.attr('title') || timeEl.text().trim() || '';
   const publishedAt = publishedTitle || publishedDatetime || '';
 
-  // ---- Просмотры ----
-  let viewsText = $('.content-footer-button__label').first().text().trim();
-  let views = parseInt(viewsText.replace(/[^\d]/g, ''), 10);
-  if (Number.isNaN(views)) views = 0;
+  // ---- Просмотры (пытаемся взять из JSON "counters.views") ----
+  let views = 0;
+
+  try {
+    // Ищем что-то вроде: "counters":{"views":231,...
+    const countersMatch = html.match(
+      /"counters"\s*:\s*\{[^}]*"views"\s*:\s*(\d+)/m
+    );
+    if (countersMatch && countersMatch[1]) {
+      views = parseInt(countersMatch[1], 10);
+    }
+  } catch (e) {
+    console.warn('Не удалось извлечь counters.views из HTML', e);
+  }
+
+  // fallback — берём то, что видно в .content-footer-button__label
+  if (!views || Number.isNaN(views)) {
+    let viewsText = $('.content-footer-button__label').first().text().trim();
+    const candidate = parseInt(viewsText.replace(/[^\d]/g, ''), 10);
+    if (!Number.isNaN(candidate)) {
+      views = candidate;
+    } else {
+      views = 0;
+    }
+  }
 
   return {
     title,
@@ -79,23 +105,25 @@ async function fetchArticleInfo(url) {
   };
 }
 
-// ====== миддлвары ======
+// =======================
+// Миддлвары + статика
+// =======================
 
 app.use(cors());
 app.use(express.json());
-
-// раздаём статику из папки public — тут будет наш HTML, JS, CSS
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ====== API ======
+// =======================
+// API
+// =======================
 
-// получить список статей
+// Получить все статьи
 app.get('/api/articles', (req, res) => {
   const articles = loadArticles();
   res.json(articles);
 });
 
-// добавить новую статью
+// Добавить новую статью
 app.post('/api/articles', async (req, res) => {
   const { url } = req.body;
   if (!url) {
@@ -131,7 +159,7 @@ app.post('/api/articles', async (req, res) => {
   }
 });
 
-// обновить одну
+// Обновить одну статью
 app.post('/api/articles/:id/refresh', async (req, res) => {
   const { id } = req.params;
   const articles = loadArticles();
@@ -143,6 +171,7 @@ app.post('/api/articles/:id/refresh', async (req, res) => {
 
   try {
     const info = await fetchArticleInfo(article.url);
+
     article.title = info.title;
     article.publishedAt = info.publishedAt;
     article.publishedDatetime = info.publishedDatetime;
@@ -157,7 +186,7 @@ app.post('/api/articles/:id/refresh', async (req, res) => {
   }
 });
 
-// обновить все
+// Обновить все статьи
 app.post('/api/refresh-all', async (req, res) => {
   const articles = loadArticles();
   let updated = 0;
@@ -165,11 +194,13 @@ app.post('/api/refresh-all', async (req, res) => {
   for (const article of articles) {
     try {
       const info = await fetchArticleInfo(article.url);
+
       article.title = info.title;
       article.publishedAt = info.publishedAt;
       article.publishedDatetime = info.publishedDatetime;
       article.views = info.views;
       article.lastUpdated = new Date().toISOString();
+
       updated++;
     } catch (e) {
       console.error(`Failed to refresh ${article.url}`, e);
@@ -180,7 +211,24 @@ app.post('/api/refresh-all', async (req, res) => {
   res.json({ updated, total: articles.length });
 });
 
-// ====== CRON: ежедневное обновление ======
+// Удалить статью
+app.delete('/api/articles/:id', (req, res) => {
+  const { id } = req.params;
+  const articles = loadArticles();
+  const index = articles.findIndex((a) => a.id === id);
+
+  if (index === -1) {
+    return res.status(404).json({ error: 'Статья не найдена' });
+  }
+
+  const deleted = articles.splice(index, 1)[0];
+  saveArticles(articles);
+  res.json({ success: true, deleted });
+});
+
+// =======================
+// CRON — ежедневное обновление
+// =======================
 
 cron.schedule('0 3 * * *', async () => {
   console.log('Running daily refresh job...');
@@ -203,7 +251,9 @@ cron.schedule('0 3 * * *', async () => {
   console.log('Daily refresh finished');
 });
 
-// ====== старт ======
+// =======================
+// Старт сервера
+// =======================
 
 app.listen(PORT, () => {
   console.log(`Server started on http://localhost:${PORT}`);
