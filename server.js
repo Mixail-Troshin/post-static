@@ -10,10 +10,11 @@ import { fileURLToPath } from 'url';
 
 const FileStore = FileStoreFactory(session);
 
+// --- paths ---
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// ---------- загрузка конфига ----------
+// --- load config (без ENV, всё из репозитория) ---
 const DEFAULTS = {
   port: 3000,
   adminLogin: 'admin',
@@ -24,23 +25,20 @@ const DEFAULTS = {
 
 let CONFIG = { ...DEFAULTS };
 try {
-  const cfgText = await fs.readFile(path.join(__dirname, 'config.json'), 'utf-8');
-  const userCfg = JSON.parse(cfgText);
-  CONFIG = {
-    ...CONFIG,
-    ...userCfg,
-    dataDir: path.resolve(__dirname, userCfg.dataDir || DEFAULTS.dataDir)
-  };
+  const cfg = await fs.readFile(path.join(__dirname, 'config.json'), 'utf-8');
+  const u = JSON.parse(cfg);
+  CONFIG = { ...CONFIG, ...u, dataDir: path.resolve(__dirname, u.dataDir || DEFAULTS.dataDir) };
 } catch {
-  // оставим значения по умолчанию
+  // оставим дефолт
 }
 
-// гарантируем наличие папок/файлов данных
+// --- ensure data dirs/files ---
 await fs.mkdir(CONFIG.dataDir, { recursive: true });
 await fs.mkdir(path.join(CONFIG.dataDir, 'sessions'), { recursive: true });
 
 const LEGACY_ARTICLES = path.join(__dirname, 'articles.json'); // если раньше лежал в корне
 const ARTICLES_FILE = path.join(CONFIG.dataDir, 'articles.json');
+
 try {
   await fs.access(ARTICLES_FILE);
 } catch {
@@ -52,7 +50,7 @@ try {
   }
 }
 
-// ---------- helpers для статей ----------
+// --- helpers ---
 async function loadArticles() {
   try {
     const data = await fs.readFile(ARTICLES_FILE, 'utf-8');
@@ -61,12 +59,11 @@ async function loadArticles() {
     return [];
   }
 }
-
-async function saveArticles(articles) {
-  await fs.writeFile(ARTICLES_FILE, JSON.stringify(articles, null, 2), 'utf-8');
+async function saveArticles(list) {
+  await fs.writeFile(ARTICLES_FILE, JSON.stringify(list, null, 2), 'utf-8');
 }
 
-// ---------- парсинг VC.ru ----------
+// --- VC.ru parser ---
 async function fetchPostStats(url) {
   const res = await fetch(url, {
     headers: {
@@ -81,25 +78,24 @@ async function fetchPostStats(url) {
 
   const title = $('h1').first().text().trim() || 'Без названия';
 
-  // ISO-дата публикации
   const timeEl = $('.content-header__date time').first();
   const publishedAt = timeEl.attr('datetime') || timeEl.text().trim() || null;
 
-  // Доступный на странице счётчик (рядом с глазом) — используем как «открытия»
+  // На видимой странице есть счётчик рядом с глазом:
   const viewsText = $('.content-footer-button__label').first().text().trim();
   const opens = Number(viewsText.replace(/\s/g, '')) || 0;
 
   return { title, publishedAt, opens };
 }
 
-// ---------- приложение ----------
+// --- app ---
 const app = express();
 
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// сессии: файловый стор (без MemoryStore warning)
+// sessions (file store -> без MemoryStore warning)
 app.use(
   session({
     store: new FileStore({
@@ -118,17 +114,24 @@ app.use(
   })
 );
 
-// СТАТИКА — обязательно ДО API и fallback
+// --- STATIC under /static (железно не ломается fallback'ом) ---
 const publicDir = path.join(__dirname, 'public');
-app.use(express.static(publicDir));                 // корень
-app.use('/post-static', express.static(publicDir)); // и под префиксом
+app.use(
+  '/static',
+  express.static(publicDir, {
+    maxAge: '1h',
+    etag: true,
+    lastModified: true
+  })
+);
 
-// авторизация
+// --- auth middleware ---
 function requireAuth(req, res, next) {
   if (req.session && req.session.auth) return next();
   return res.status(401).json({ error: 'Не авторизован' });
 }
 
+// --- auth routes ---
 app.post('/api/login', (req, res) => {
   const { login, password } = req.body;
   if (login === CONFIG.adminLogin && password === CONFIG.adminPassword) {
@@ -137,12 +140,11 @@ app.post('/api/login', (req, res) => {
   }
   return res.status(401).json({ error: 'Неверный логин или пароль' });
 });
-
 app.post('/api/logout', (req, res) => {
   req.session.destroy(() => res.json({ ok: true }));
 });
 
-// статьи
+// --- articles API ---
 app.get('/api/articles', requireAuth, async (_req, res) => {
   res.json(await loadArticles());
 });
@@ -190,20 +192,21 @@ app.delete('/api/articles/:id', requireAuth, async (req, res) => {
   res.json({ ok: true });
 });
 
-// health (опционально)
+// health
 app.get('/health', (_req, res) => res.send('ok'));
 
-// SPA fallback — САМЫЙ КОНЕЦ
-app.get('/', (_req, res) => {
-  res.sendFile(path.join(publicDir, 'index.html'));
-});
-app.get('/post-static', (_req, res) => {
-  res.sendFile(path.join(publicDir, 'index.html'));
-});
-app.get('/post-static/*', (_req, res) => {
+// --- SPA entry for roots ---
+app.get(['/', '/post-static'], (_req, res) => {
   res.sendFile(path.join(publicDir, 'index.html'));
 });
 
+// --- SPA fallback (самый конец):
+// не трогаем /api, /static и запросы на файлы с точкой (*.css, *.js, *.ico, ...)
+app.get(/^\/(post-static\/)?(?!api\/)(?!static\/)(?!.*\..*$).*/, (_req, res) => {
+  res.sendFile(path.join(publicDir, 'index.html'));
+});
+
+// --- start ---
 const PORT = Number(process.env.PORT) || CONFIG.port || 3000;
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server started on http://localhost:${PORT}`);
