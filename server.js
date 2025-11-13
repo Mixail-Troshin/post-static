@@ -26,7 +26,6 @@ function loadArticles() {
   const raw = fs.readFileSync(ARTICLES_FILE, 'utf8');
   try {
     const data = JSON.parse(raw);
-    // гарантируем, что это массив
     return Array.isArray(data) ? data : [];
   } catch (e) {
     console.error('Ошибка парсинга articles.json, перезаписываю []', e);
@@ -71,29 +70,47 @@ async function fetchArticleInfo(url) {
   const publishedTitle = timeEl.attr('title') || timeEl.text().trim() || '';
   const publishedAt = publishedTitle || publishedDatetime || '';
 
-  // ---- Просмотры (пытаемся взять из JSON "counters.views") ----
-  let views = 0;
+  // ---- Открытия страницы поста ----
+  let opens = 0;
 
+  // 1) Пробуем вытащить из блока модалки (если он есть в HTML)
   try {
-    // Ищем что-то вроде: "counters":{"views":231,...
-    const countersMatch = html.match(
-      /"counters"\s*:\s*\{[^}]*"views"\s*:\s*(\d+)/m
-    );
-    if (countersMatch && countersMatch[1]) {
-      views = parseInt(countersMatch[1], 10);
-    }
+    $('.post-stats__item').each((_, el) => {
+      const label = $(el).find('.post-stats__label').text().trim().toLowerCase();
+      if (label.includes('открытий страницы поста') || label === 'открытий') {
+        const valueText = $(el).find('.post-stats__value').text().trim();
+        const val = parseInt(valueText.replace(/[^\d]/g, ''), 10);
+        if (!Number.isNaN(val)) {
+          opens = val;
+        }
+      }
+    });
   } catch (e) {
-    console.warn('Не удалось извлечь counters.views из HTML', e);
+    console.warn('Не удалось разобрать post-stats__item', e);
   }
 
-  // fallback — берём то, что видно в .content-footer-button__label
-  if (!views || Number.isNaN(views)) {
+  // 2) Если не нашли в модалке — пробуем JSON counters.views
+  if (!opens || Number.isNaN(opens)) {
+    try {
+      const countersMatch = html.match(
+        /"counters"\s*:\s*\{[^}]*"views"\s*:\s*(\d+)/m
+      );
+      if (countersMatch && countersMatch[1]) {
+        opens = parseInt(countersMatch[1], 10);
+      }
+    } catch (e) {
+      console.warn('Не удалось извлечь counters.views из HTML', e);
+    }
+  }
+
+  // 3) Fallback — .content-footer-button__label
+  if (!opens || Number.isNaN(opens)) {
     let viewsText = $('.content-footer-button__label').first().text().trim();
     const candidate = parseInt(viewsText.replace(/[^\d]/g, ''), 10);
     if (!Number.isNaN(candidate)) {
-      views = candidate;
+      opens = candidate;
     } else {
-      views = 0;
+      opens = 0;
     }
   }
 
@@ -101,7 +118,7 @@ async function fetchArticleInfo(url) {
     title,
     publishedAt,
     publishedDatetime,
-    views
+    views: opens // views = "открытий страницы поста"
   };
 }
 
@@ -126,8 +143,18 @@ app.get('/api/articles', (req, res) => {
 // Добавить новую статью
 app.post('/api/articles', async (req, res) => {
   const { url } = req.body;
+  let { cost } = req.body;
+
   if (!url) {
     return res.status(400).json({ error: 'url is required' });
+  }
+
+  // приводим cost к числу
+  if (typeof cost === 'string') {
+    cost = parseFloat(cost.replace(',', '.'));
+  }
+  if (typeof cost !== 'number' || Number.isNaN(cost)) {
+    cost = null;
   }
 
   try {
@@ -146,6 +173,7 @@ app.post('/api/articles', async (req, res) => {
       publishedAt: info.publishedAt,
       publishedDatetime: info.publishedDatetime,
       views: info.views,
+      cost, // стоимость размещения (руб), может быть null
       lastUpdated: new Date().toISOString()
     };
 
@@ -177,6 +205,7 @@ app.post('/api/articles/:id/refresh', async (req, res) => {
     article.publishedDatetime = info.publishedDatetime;
     article.views = info.views;
     article.lastUpdated = new Date().toISOString();
+    // cost НЕ трогаем
 
     saveArticles(articles);
     res.json(article);
@@ -200,6 +229,7 @@ app.post('/api/refresh-all', async (req, res) => {
       article.publishedDatetime = info.publishedDatetime;
       article.views = info.views;
       article.lastUpdated = new Date().toISOString();
+      // cost не трогаем
 
       updated++;
     } catch (e) {
