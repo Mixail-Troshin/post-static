@@ -1,7 +1,7 @@
 {
   "port": 3000,
   "adminLogin": "admin",
-  "adminPassword": "secret123",
+  "adminPassword": "admin",
   "sessionSecret": "change-this-secret",
   "dataDir": "./data"
 }
