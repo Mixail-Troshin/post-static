@@ -12,14 +12,17 @@
     <div class="panel">
       <h1>VC Metrics</h1>
       <p class="muted">Вход в систему</p>
-      <div class="form">
-        <label>E-mail</label>
-        <input id="email" type="email" placeholder="admin@local" />
-        <label>Пароль</label>
-        <input id="password" type="password" placeholder="••••••••" />
-        <button id="loginBtn" class="accent block">Войти</button>
+          <!-- 👇 теперь это форма, чтобы корректно ловить Enter/автозаполнение -->
+      <form id="loginForm" class="form" autocomplete="on" novalidate>
+        <label for="email">E-mail</label>
+        <input id="email" name="email" type="email" placeholder="admin@local"
+               autocomplete="username" required />
+        <label for="password">Пароль</label>
+        <input id="password" name="password" type="password" placeholder="••••••••"
+               autocomplete="current-password" required />
+        <button id="loginBtn" class="accent block" type="submit">Войти</button>
         <p id="loginErr" class="error"></p>
-      </div>
+      </form>
     </div>
   </section>
 
@@ -89,6 +92,6 @@
   </section>
 
   <div id="toast" class="toast hidden"></div>
-  <script src="app.js"></script>
+ <script src="app.js" defer></script> <!-- 👈 гарантируем, что обработчики навесятся -->
 </body>
 </html>
