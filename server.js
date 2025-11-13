@@ -13,57 +13,63 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// ====== путь к файлу с данными ======
 const ARTICLES_FILE = path.join(__dirname, 'articles.json');
 
-// ======================================================
-// Загрузка / сохранение JSON
-// ======================================================
+// ====== helpers для сохранения/загрузки ======
 
 function loadArticles() {
   if (!fs.existsSync(ARTICLES_FILE)) {
     fs.writeFileSync(ARTICLES_FILE, '[]', 'utf8');
   }
-  return JSON.parse(fs.readFileSync(ARTICLES_FILE, 'utf8'));
+  const raw = fs.readFileSync(ARTICLES_FILE, 'utf8');
+  try {
+    return JSON.parse(raw);
+  } catch (e) {
+    console.error('Failed to parse articles.json, resetting file', e);
+    fs.writeFileSync(ARTICLES_FILE, '[]', 'utf8');
+    return [];
+  }
 }
 
-function saveArticles(data) {
-  fs.writeFileSync(ARTICLES_FILE, JSON.stringify(data, null, 2), 'utf8');
+function saveArticles(articles) {
+  fs.writeFileSync(ARTICLES_FILE, JSON.stringify(articles, null, 2), 'utf8');
 }
 
-// ======================================================
-// ПАРСИНГ СТАТЬИ VC.RU
-// ======================================================
+// ====== парсинг vc.ru ======
 
 async function fetchArticleInfo(url) {
-  const response = await fetch(url, {
+  const res = await fetch(url, {
     headers: {
-      "User-Agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+      'User-Agent':
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
+        '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
     }
   });
 
-  const html = await response.text();
+  if (!res.ok) {
+    throw new Error(`Failed to load page: ${res.status} ${res.statusText}`);
+  }
+
+  const html = await res.text();
   const $ = cheerio.load(html);
 
-  // ---------- Заголовок ----------
+  // ---- Заголовок ----
   const title =
     $('meta[property="og:title"]').attr('content') ||
     $('h1').first().text().trim() ||
     'Без названия';
 
-  // ---------- Дата ----------
+  // ---- Дата ----
   const timeEl = $('.content-header__date time').first();
-
   const publishedDatetime = timeEl.attr('datetime') || '';
   const publishedTitle = timeEl.attr('title') || timeEl.text().trim() || '';
-
   const publishedAt = publishedTitle || publishedDatetime || '';
 
-  // ---------- Просмотры ----------
+  // ---- Просмотры ----
   let viewsText = $('.content-footer-button__label').first().text().trim();
-  let views = parseInt(viewsText.replace(/\D/g, ''), 10);
-  if (isNaN(views)) views = 0;
+  let views = parseInt(viewsText.replace(/[^\d]/g, ''), 10);
+  if (Number.isNaN(views)) views = 0;
 
   return {
     title,
@@ -73,33 +79,39 @@ async function fetchArticleInfo(url) {
   };
 }
 
-// ======================================================
-// EXPRESS API
-// ======================================================
+// ====== миддлвары ======
 
 app.use(cors());
 app.use(express.json());
 
-// Получить список
+// раздаём статику из папки public — тут будет наш HTML, JS, CSS
+app.use(express.static(path.join(__dirname, 'public')));
+
+// ====== API ======
+
+// получить список статей
 app.get('/api/articles', (req, res) => {
-  res.json(loadArticles());
+  const articles = loadArticles();
+  res.json(articles);
 });
 
-// Добавить статью
+// добавить новую статью
 app.post('/api/articles', async (req, res) => {
   const { url } = req.body;
-  if (!url) return res.status(400).json({ error: "URL is required" });
-
-  const articles = loadArticles();
-
-  if (articles.find(a => a.url === url)) {
-    return res.status(400).json({ error: "Статья уже есть в списке" });
+  if (!url) {
+    return res.status(400).json({ error: 'url is required' });
   }
 
   try {
+    const articles = loadArticles();
+
+    if (articles.find((a) => a.url === url)) {
+      return res.status(400).json({ error: 'Эта статья уже есть в списке' });
+    }
+
     const info = await fetchArticleInfo(url);
 
-    const newItem = {
+    const newArticle = {
       id: Date.now().toString(),
       url,
       title: info.title,
@@ -109,26 +121,28 @@ app.post('/api/articles', async (req, res) => {
       lastUpdated: new Date().toISOString()
     };
 
-    articles.push(newItem);
+    articles.push(newArticle);
     saveArticles(articles);
 
-    res.json(newItem);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Ошибка загрузки статьи" });
+    res.json(newArticle);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Не удалось получить данные статьи' });
   }
 });
 
-// Обновить одну
+// обновить одну
 app.post('/api/articles/:id/refresh', async (req, res) => {
+  const { id } = req.params;
   const articles = loadArticles();
-  const article = articles.find(a => a.id === req.params.id);
+  const article = articles.find((a) => a.id === id);
 
-  if (!article) return res.status(404).json({ error: "Not found" });
+  if (!article) {
+    return res.status(404).json({ error: 'Статья не найдена' });
+  }
 
   try {
     const info = await fetchArticleInfo(article.url);
-
     article.title = info.title;
     article.publishedAt = info.publishedAt;
     article.publishedDatetime = info.publishedDatetime;
@@ -137,12 +151,13 @@ app.post('/api/articles/:id/refresh', async (req, res) => {
 
     saveArticles(articles);
     res.json(article);
-  } catch (err) {
-    res.status(500).json({ error: "Ошибка обновления" });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Не удалось обновить статью' });
   }
 });
 
-// Обновить все
+// обновить все
 app.post('/api/refresh-all', async (req, res) => {
   const articles = loadArticles();
   let updated = 0;
@@ -150,16 +165,14 @@ app.post('/api/refresh-all', async (req, res) => {
   for (const article of articles) {
     try {
       const info = await fetchArticleInfo(article.url);
-
       article.title = info.title;
       article.publishedAt = info.publishedAt;
       article.publishedDatetime = info.publishedDatetime;
       article.views = info.views;
       article.lastUpdated = new Date().toISOString();
-
       updated++;
-    } catch (err) {
-      console.error("Ошибка при обновлении:", article.url);
+    } catch (e) {
+      console.error(`Failed to refresh ${article.url}`, e);
     }
   }
 
@@ -167,34 +180,31 @@ app.post('/api/refresh-all', async (req, res) => {
   res.json({ updated, total: articles.length });
 });
 
-// ======================================================
-// CRON — ежедневное обновление
-// ======================================================
+// ====== CRON: ежедневное обновление ======
 
-cron.schedule("0 3 * * *", () => {
-  console.log("Daily refresh started");
+cron.schedule('0 3 * * *', async () => {
+  console.log('Running daily refresh job...');
   const articles = loadArticles();
 
-  articles.forEach(async (article) => {
+  for (const article of articles) {
     try {
       const info = await fetchArticleInfo(article.url);
       article.title = info.title;
       article.publishedAt = info.publishedAt;
+      article.publishedDatetime = info.publishedDatetime;
       article.views = info.views;
       article.lastUpdated = new Date().toISOString();
-    } catch (err) {
-      console.log("Error refreshing:", article.url);
+    } catch (e) {
+      console.error(`Failed to refresh ${article.url}`, e);
     }
-  });
+  }
 
   saveArticles(articles);
-  console.log("Daily refresh completed");
+  console.log('Daily refresh finished');
 });
 
-// ======================================================
-// START SERVER
-// ======================================================
+// ====== старт ======
 
 app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+  console.log(`Server started on http://localhost:${PORT}`);
 });
