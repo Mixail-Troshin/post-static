@@ -2,96 +2,125 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>VC Metrics</title>
-  <link rel="stylesheet" href="styles.css" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root { --bg:#0f1216; --card:#151a21; --muted:#99a3ad; --text:#e7edf3; --acc:#6aa7ff; --danger:#ef4444; }
+    html,body{height:100%}
+    body{margin:0;background:var(--bg);color:var(--text);font:14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;}
+    a{color:var(--acc);text-decoration:none}
+    .wrap{max-width:1100px;margin:0 auto;padding:24px}
+    .card{background:var(--card);border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,.25);padding:20px}
+    h1{margin:0 0 16px 0;font-size:18px}
+    .row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+    input,button{border-radius:12px;border:1px solid #263043;background:#10151b;color:var(--text);padding:10px 12px}
+    input::placeholder{color:#5f6b77}
+    button{background:#1a2230;border-color:#2a3950;cursor:pointer}
+    button:hover{background:#202b3d}
+    button.ghost{background:transparent;border-color:#2a3950}
+    button.danger{background:#281415;border-color:#4b1d1f}
+    .muted{color:var(--muted)}
+    .hidden{display:none}
+    .tabs{display:flex;gap:8px;margin-bottom:16px}
+    .tab{padding:10px 12px;border-radius:12px;background:#121822;border:1px solid #233048;cursor:pointer}
+    .tab.active{background:#1b2738;border-color:#2f4466}
+    table{width:100%;border-collapse:collapse}
+    th,td{padding:10px;border-bottom:1px solid #1f2733;vertical-align:middle}
+    th{font-weight:600;text-align:left;color:#9fb0c7}
+    td.actions{white-space:nowrap}
+    .grid{display:grid;grid-template-columns:1fr;gap:16px}
+    .err{color:#ff8e8e}
+    .ok{color:#84f3b8}
+    #toast{position:fixed;right:18px;bottom:18px;background:#1c2533;border:1px solid #2e3c55;padding:10px 14px;border-radius:12px}
+    #loginWrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+    #loginBox{width:100%;max-width:380px}
+    .ta-right{text-align:right}
+  </style>
 </head>
 <body>
-  <!-- Login screen -->
-  <section id="login" class="screen centered">
-    <div class="panel">
-      <h1>VC Metrics</h1>
-      <p class="muted">Вход в систему</p>
-          <!-- 👇 теперь это форма, чтобы корректно ловить Enter/автозаполнение -->
-      <form id="loginForm" class="form" method="post" action="/api/login" autocomplete="on" novalidate>
-        <label for="email">E-mail</label>
-        <input id="email" name="email" type="email" placeholder="admin@local"
-               autocomplete="username" required />
-        <label for="password">Пароль</label>
-        <input id="password" name="password" type="password" placeholder="••••••••"
-               autocomplete="current-password" required />
-        <button id="loginBtn" class="accent block" type="submit">Войти</button>
-        <p id="loginErr" class="error"></p>
+
+<div id="login" class="hidden">
+  <div id="loginWrap">
+    <div class="card" id="loginBox">
+      <h1>Вход</h1>
+      <form id="loginForm" novalidate>
+        <div class="grid">
+          <input id="email" type="email" placeholder="E-mail" autocomplete="username" />
+          <input id="password" type="password" placeholder="Пароль" autocomplete="current-password" />
+          <div class="row">
+            <button id="loginBtn" type="submit">Войти</button>
+            <span id="loginErr" class="err"></span>
+          </div>
+          <div class="muted">Тестовые: <code>admin@local</code> / <code>admin</code></div>
+        </div>
       </form>
     </div>
-  </section>
+  </div>
+</div>
 
-  <!-- App -->
-  <section id="app" class="screen hidden">
-    <header class="topbar">
-      <div class="brand">VC Metrics</div>
-      <nav class="tabs">
-        <button class="tab active" data-tab="monitor">Мониторинг</button>
-        <button class="tab" data-tab="settings" id="tabSettings">Настройки</button>
-        <button id="logout" class="ghost">Выход</button>
-      </nav>
-    </header>
+<div id="app" class="hidden">
+  <div class="wrap">
+    <div class="row" style="justify-content:space-between;margin-bottom:12px">
+      <h1>VC Metrics</h1>
+      <div class="row">
+        <button id="logout" class="ghost">Выйти</button>
+      </div>
+    </div>
 
-    <main class="container">
-      <!-- Мониторинг -->
-      <div id="tab-monitor">
-        <div class="panel">
-          <h2>Добавить статью</h2>
-          <div class="form-inline">
-            <input id="urlInput" type="url" placeholder="https://vc.ru/.../2317921-title" />
-            <button id="addBtn" class="accent">Добавить</button>
-            <span id="addMsg" class="muted"></span>
-          </div>
-        </div>
+    <div class="tabs">
+      <div class="tab active" data-tab="monitor">Мониторинг</div>
+      <div class="tab" id="tabSettings" data-tab="settings">Настройки</div>
+    </div>
 
-        <div class="panel">
-          <div class="panel-head">
-            <h2>Список статей</h2>
-            <div class="actions">
-              <button id="refreshAll" class="ghost">Обновить всё</button>
-            </div>
-          </div>
-          <div class="tablewrap">
-            <table id="table">
-              <thead>
-                <tr>
-                  <th>Дата</th>
-                  <th>Заголовок</th>
-                  <th>Открытия</th>
-                  <th>Показы</th>
-                  <th>CPM (откр.)</th>
-                  <th>CPM (показы)</th>
-                  <th>Обновлено</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody></tbody>
-            </table>
-          </div>
+    <!-- Мониторинг -->
+    <div id="tab-monitor">
+      <div class="card" style="margin-bottom:16px">
+        <div class="row">
+          <input id="urlInput" type="url" placeholder="Вставь ссылку на статью vc.ru, например https://vc.ru/marketing/2317921-..." style="flex:1;min-width:320px" />
+          <button id="addBtn">Добавить</button>
+          <span id="addMsg" class="muted"></span>
+          <button id="refreshAll" class="ghost">Обновить всё</button>
         </div>
       </div>
 
-      <!-- Настройки -->
-      <div id="tab-settings" class="hidden">
-        <div class="panel">
-          <h2>Стоимость размещения</h2>
-          <p class="muted">Используется для расчёта CPM.</p>
-          <div class="form-inline">
-            <input id="price" type="number" min="0" step="1" />
-            <button id="savePrice" class="accent">Сохранить</button>
-            <span id="priceMsg" class="muted"></span>
-          </div>
-        </div>
+      <div class="card">
+        <table id="table">
+          <thead>
+            <tr>
+              <th>Публикация</th>
+              <th>Статья</th>
+              <th>Открытия</th>
+              <th>Показы в ленте</th>
+              <th>CPM (открытия)</th>
+              <th>CPM (лента)</th>
+              <th>Обновлено</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
       </div>
-    </main>
-  </section>
+    </div>
 
-  <div id="toast" class="toast hidden"></div>
- <script src="app.js" defer></script> <!-- 👈 гарантируем, что обработчики навесятся -->
+    <!-- Настройки -->
+    <div id="tab-settings" class="hidden">
+      <div class="card">
+        <div class="row" style="align-items:flex-end">
+          <div>
+            <div class="muted" style="margin-bottom:6px">Цена размещения (руб.)</div>
+            <input id="price" type="number" inputmode="decimal" style="width:220px" placeholder="0" />
+          </div>
+          <button id="savePrice">Сохранить</button>
+          <span id="priceMsg" class="muted"></span>
+        </div>
+        <div class="muted" style="margin-top:8px">CPM считается как цена × 1000 / метрика.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="hidden"></div>
+
+<script src="./app.js"></script>
 </body>
 </html>
