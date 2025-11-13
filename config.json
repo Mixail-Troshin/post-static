@@ -1,0 +1,6 @@
+{
+  "adminLogin": "admin",
+  "adminPassword": "secret123",
+  "sessionSecret": "change-this-secret",
+  "dataDir": "./data"
+}
