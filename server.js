@@ -14,9 +14,7 @@ const ROOT = __dirname;
 const PUBLIC = path.join(ROOT, "public");
 const CONFIG_FILE = path.join(ROOT, "config.json");
 const ARTICLES_FILE = path.join(ROOT, "articles.json");
-// ... вверху файла, рядом с helpers:
-const isSecure = (req) =>
-  req.secure || req.headers["x-forwarded-proto"] === "https";
+
 
 // --- helpers -------------------------------------------------
 async function readJSON(file, fallback) {
@@ -110,40 +108,50 @@ app.use(express.json());
 app.use(cookieParser());
 app.use(express.static(PUBLIC, { extensions: ["html"] }));
 
+app.use(express.json());
+app.use(express.urlencoded({ extended: true })); // 👈 для x-www-form-urlencoded форм
+
 
 
 // --- auth ----------------------------------------------------
-app.get("/api/me", async (req, res) => {
-  const user = readSession(req);
-  if (!user) return res.status(401).json({ error: "Unauthorized" });
-  res.json({ user: { email: user.email, isAdmin: !!user.isAdmin } });
-});
+const isSecure = (req) =>
+  req.secure || req.headers["x-forwarded-proto"] === "https";
 
 app.post("/api/login", async (req, res) => {
-  const { email, password } = req.body || {};
-  const cfg = await loadConfig();
-  const user = cfg.users.find(
-    u => u.email.toLowerCase() === String(email || "").toLowerCase()
-  );
-  if (!user) return res.status(400).json({ error: "Неверные данные" });
+  // Поддерживаем и JSON, и обычную HTML-форму
+  const email = String(req.body?.email || "").trim().toLowerCase();
+  const password = String(req.body?.password || "");
 
-  const ok = await bcrypt.compare(String(password || ""), user.passwordHash);
-  if (!ok) return res.status(400).json({ error: "Неверные данные" });
+  const cfg = await loadConfig(); // как и раньше
+  const user = cfg.users.find(u => u.email.toLowerCase() === email);
+  if (!user) {
+    // Если пришёл HTML — покажем редирект на /?login=error, иначе JSON
+    if (req.headers.accept?.includes("text/html")) return res.redirect(303, "/?login=error");
+    return res.status(400).json({ error: "Неверные данные" });
+  }
+
+  const ok = await bcrypt.compare(password, user.passwordHash);
+  if (!ok) {
+    if (req.headers.accept?.includes("text/html")) return res.redirect(303, "/?login=error");
+    return res.status(400).json({ error: "Неверные данные" });
+  }
 
   const sid = createSession({ email: user.email, isAdmin: !!user.isAdmin });
   res.cookie("sid", sid, {
     httpOnly: true,
     sameSite: "lax",
-    secure: isSecure(req),          // 👈 стабильнее на Render/HTTPS и локально
-    maxAge: 7 * 24 * 3600 * 1000
+    secure: isSecure(req),
+    maxAge: 7 * 24 * 3600 * 1000,
+    path: "/"
   });
-  res.json({ ok: true });
-});
 
-app.post("/api/logout", (req, res) => {
-  const sid = req.cookies?.sid;
-  if (sid) sessions.delete(sid);
-  res.clearCookie("sid");
+  // Если это обычная форма — редирект на главную уже авторизованным
+  const isFormPost =
+    (req.headers["content-type"] || "").includes("application/x-www-form-urlencoded") ||
+    (req.headers.accept || "").includes("text/html");
+  if (isFormPost) return res.redirect(303, "/");
+
+  // Иначе — отвечаем JSON (для fetch в SPA)
   res.json({ ok: true });
 });
 
