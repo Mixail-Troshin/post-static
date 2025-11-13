@@ -27,13 +27,40 @@
     </section>
 
     <section class="card">
+      <div class="filters-header">
+        <h2>Фильтр по периоду</h2>
+        <div class="quick-filters">
+          <button type="button" class="chip" data-filter="all">Всё время</button>
+          <button type="button" class="chip" data-filter="this-month">Этот месяц</button>
+          <button type="button" class="chip" data-filter="last-month">Прошлый месяц</button>
+        </div>
+      </div>
+      <div class="filters-row">
+        <div class="field">
+          <label for="filter-from">С:</label>
+          <input type="date" id="filter-from" />
+        </div>
+        <div class="field">
+          <label for="filter-to">По:</label>
+          <input type="date" id="filter-to" />
+        </div>
+        <div class="field field-buttons">
+          <button type="button" id="apply-filter">Применить</button>
+          <button type="button" id="reset-filter" class="secondary">Сбросить</button>
+        </div>
+      </div>
+
+      <div class="summary">
+        <span>Статей в выборке: <strong id="total-articles">0</strong></span>
+        <span>Суммарные просмотры: <strong id="total-views">0</strong></span>
+        <span>Средние на статью: <strong id="avg-views">0</strong></span>
+      </div>
+    </section>
+
+    <section class="card">
       <div class="table-header">
         <h2>Список статей</h2>
         <button id="refresh-all">Обновить все</button>
-      </div>
-      <div class="summary">
-        <span>Всего статей: <strong id="total-articles">0</strong></span>
-        <span>Суммарные просмотры: <strong id="total-views">0</strong></span>
       </div>
       <div class="table-wrapper">
         <table id="articles-table">
