@@ -1,14 +1,5 @@
 {
-  "jwtSecret": "change-me-please",
   "placementPrice": 15000,
-  "smtp": {
-    "host": "",
-    "port": 465,
-    "secure": true,
-    "user": "",
-    "pass": "",
-    "from": ""
-  },
   "users": [
     {
       "email": "admin@local",
