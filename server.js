@@ -34,7 +34,7 @@ try {
   CONFIG = { ...CONFIG, ...userCfg, dataDir: path.resolve(__dirname, userCfg.dataDir || DEFAULTS.dataDir) };
 } catch {}
 
-// --- ensure data + sessions (fallback в /tmp для Render и др.) ---
+// --- ensure data + sessions (fallback в /tmp для Render) ---
 async function ensureWritableDir(dir) {
   try {
     await fs.mkdir(dir, { recursive: true });
@@ -66,6 +66,21 @@ async function saveArticles(list) {
   await fs.writeFile(ARTICLES_FILE, JSON.stringify(list, null, 2), 'utf-8');
 }
 
+// --- helpers: корректный парсинг 1.6K / 1,6 тыс. / 2,3 млн ---
+function parseCompactNumber(input) {
+  if (!input) return 0;
+  let s = String(input).toLowerCase().replace(/[\u00a0\s]/g, '').trim(); // убираем пробелы (в т.ч. неразрывные)
+  s = s.replace(/тыс\.?/g, 'k').replace(/млн\.?/g, 'm').replace(/млрд\.?/g, 'b'); // русские суффиксы → латинские
+  const m = s.match(/^([\d.,]+)([kmb])?$/i);
+  if (!m) {
+    const onlyDigits = s.replace(/[^\d]/g, '');
+    return onlyDigits ? Number(onlyDigits) : 0;
+  }
+  const num = parseFloat(m[1].replace(',', '.')) || 0;
+  const mult = m[2] ? ({ k:1e3, m:1e6, b:1e9 }[m[2].toLowerCase()] || 1) : 1;
+  return Math.round(num * mult);
+}
+
 // --- VC.ru parser (title, publishedAt, opens) ---
 async function fetchPostStats(url) {
   const res = await fetch(url, {
@@ -82,9 +97,9 @@ async function fetchPostStats(url) {
   const timeEl = $('.content-header__date time').first();
   const publishedAt = timeEl.attr('datetime') || timeEl.text().trim() || null;
 
-  // видимый рядом счётчик (принимаем как «открытия»)
+  // Видимый счётчик рядом с «глазом» — считаем как «открытия»
   const viewsText = $('.content-footer-button__label').first().text().trim();
-  const opens = Number(viewsText.replace(/\s/g, '')) || 0;
+  const opens = parseCompactNumber(viewsText);
 
   return { title, publishedAt, opens };
 }
@@ -129,7 +144,7 @@ app.use(
     }
   })
 );
-// safety routes
+// safety routes (если вдруг static мимо)
 app.get('/static/styles.css', (req, res) => {
   res.type('text/css');
   res.sendFile(path.join(publicDir, 'styles.css'));
