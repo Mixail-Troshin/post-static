@@ -1,104 +1,41 @@
 <!doctype html>
 <html lang="ru">
 <head>
-  <meta charset="utf-8" />
+  <meta charset="UTF-8" />
+  <title>VC Metrics — Вход</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>VC Metrics</title>
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="/css/styles.css" />
 </head>
 <body>
-  <header class="topbar">
-    <div class="brand">VC Metrics</div>
-    <div class="userbox">
-      <span id="whoami">—</span>
-      <button id="logoutBtn" class="btn btn-secondary">Выйти</button>
-    </div>
-  </header>
-
-  <main class="container">
-    <section class="card">
-      <h2 class="h2">Метрики</h2>
-      <div class="row">
-        <div class="col">
-          <label>Выбрать статью</label>
-          <select id="articleSelect"></select>
-        </div>
-        <div class="col">
-          <label>ID контента</label>
-          <input id="contentId" class="input" placeholder="например, 2303745" />
-        </div>
-        <div class="col">
-          <label>Режим расчёта</label>
-          <select id="mode">
-            <option value="fixed">CPM фиксированный</option>
-            <option value="budget">Есть общий бюджет</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="row" id="fixedInputs">
-        <div class="col">
-          <label>Цена за 1000 открытий (₽)</label>
-          <input id="cpmHits" class="input" type="number" step="0.01" />
-        </div>
-        <div class="col">
-          <label>Цена за 1000 показов (₽)</label>
-          <input id="cpmViews" class="input" type="number" step="0.01" />
-        </div>
-      </div>
-
-      <div class="row" id="budgetInput" style="display:none;">
-        <div class="col">
-          <label>Общий бюджет, ₽</label>
-          <input id="budget" class="input" type="number" step="0.01" />
-        </div>
-      </div>
-
-      <div class="row">
-        <button id="loadBtn" class="btn">Получить метрики</button>
-        <div id="status" class="status muted">Готов к запросу.</div>
-      </div>
-    </section>
-
-    <section class="grid">
-      <div class="kpi">
-        <div class="kpi-title">Показы в ленте</div>
-        <div class="kpi-val" id="views">—</div>
-        <div class="kpi-sub">API: counters.views</div>
-      </div>
-      <div class="kpi">
-        <div class="kpi-title">Открытия статьи</div>
-        <div class="kpi-val" id="hits">—</div>
-        <div class="kpi-sub">API: counters.hits / hitsCount</div>
-      </div>
-      <div class="kpi">
-        <div class="kpi-title" id="calcTitle">Стоимость по CPM (₽)</div>
-        <div class="kpi-val" id="calcA">—</div>
-        <div class="kpi-sub" id="calcASub">по открытиям</div>
-      </div>
-      <div class="kpi">
-        <div class="kpi-title">&nbsp;</div>
-        <div class="kpi-val" id="calcB">—</div>
-        <div class="kpi-sub" id="calcBSub">по показам</div>
-      </div>
-    </section>
-
-    <section id="adminPanel" class="card" style="display:none;">
-      <h2 class="h2">Управление доступом (только админ)</h2>
-      <div class="row">
-        <div class="col">
-          <label>E-mail для доступа</label>
-          <input id="inviteEmail" class="input" type="email" placeholder="user@example.com" />
-        </div>
-        <div class="col" style="align-self:flex-end;">
-          <button id="inviteBtn" class="btn">Выдать доступ</button>
-          <button id="resetBtn" class="btn btn-secondary">Сбросить пароль</button>
-        </div>
-      </div>
-      <div id="adminMsg" class="status muted">Введите e-mail и нажмите кнопку.</div>
-    </section>
-  </main>
-
-  <script src="app.js"></script>
+  <div class="container">
+    <h1>VC Metrics</h1>
+    <form id="loginForm" class="card">
+      <label>Логин (email/username)
+        <input name="login" required placeholder="admin или email@..." />
+      </label>
+      <label>Пароль
+        <input type="password" name="password" required placeholder="••••••••" />
+      </label>
+      <button type="submit">Войти</button>
+      <div id="msg"></div>
+    </form>
+  </div>
+  <script>
+    const f = document.getElementById('loginForm');
+    f.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = f.querySelector('button'); btn.disabled = true;
+      const msg = document.getElementById('msg'); msg.textContent = 'Входим...';
+      try {
+        const r = await fetch('/api/auth/login', {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ login: f.login.value, password: f.password.value })
+        });
+        if (!r.ok) throw new Error((await r.json()).error || 'Ошибка входа');
+        location.href = '/app.html';
+      } catch (e) { msg.textContent = e.message; }
+      finally { btn.disabled = false; }
+    });
+  </script>
 </body>
 </html>
