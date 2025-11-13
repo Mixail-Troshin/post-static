@@ -14,10 +14,10 @@
         <p class="subtitle">Трекер платных публикаций VC.ru</p>
       </header>
 
-      <!-- ЛОГИН (виден по умолчанию) -->
+      <!-- ЛОГИН (по умолчанию) -->
       <section id="login-section" class="card card--narrow">
         <h2>Вход</h2>
-        <form id="login-form" class="form form--vertical">
+        <form id="login-form" class="form form--vertical" novalidate>
           <label class="form__field">
             <span>Логин</span>
             <input id="login" type="text" autocomplete="username" required />
@@ -35,7 +35,7 @@
         </form>
       </section>
 
-      <!-- АДМИНКА (скрыта по умолчанию) -->
+      <!-- АДМИНКА (скрыта) -->
       <section id="admin-section" class="hidden">
         <div class="toolbar card">
           <h2 class="toolbar__title">Админка статистики</h2>
@@ -48,7 +48,7 @@
         <!-- Добавить статью -->
         <section class="card">
           <h3>Добавить статью</h3>
-          <form id="add-form" class="form-grid">
+          <form id="add-form" class="form-grid" novalidate>
             <label class="form__field">
               <span>Ссылка на публикацию VC.ru</span>
               <input id="article-url" type="url" placeholder="https://vc.ru/..." required />
@@ -58,7 +58,8 @@
               <input id="article-cost" type="number" min="0" step="1" placeholder="15000" required />
             </label>
             <div class="form__actions">
-              <button id="add-btn" class="btn" type="submit">Добавить</button>
+              <!-- type="button" чтобы не было перезагрузки -->
+              <button id="add-btn" class="btn" type="button">Добавить</button>
             </div>
           </form>
           <p id="add-error" class="error"></p>
