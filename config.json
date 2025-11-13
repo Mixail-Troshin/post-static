@@ -24,7 +24,7 @@
       "email": "admin@local",
       "username": "admin",
       "role": "admin",
-      "passwordHash": "$2a$10$wVDhwL5Ognr3FMBbHhKQXeDq3WThcWQ8YyK1cFOBa6JzJ5fuwKJ0u",
+      "passwordHash": "$2b$12$bF9/3pVaCM6L8BGZokmM8ecGfiY/WcKoIa/jv03gRrBTr2VQkVb2C",
       "active": true,
       "createdAt": "2025-01-01T00:00:00.000Z"
     }
