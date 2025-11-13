@@ -1,256 +1,135 @@
-const $ = s => document.querySelector(s);
-const $$ = s => Array.from(document.querySelectorAll(s));
+(async function () {
+  const $ = (id) => document.getElementById(id);
+  const nf = new Intl.NumberFormat('ru-RU');
 
-const loginSection  = $('#login-section');
-const adminSection  = $('#admin-section');
-const loginForm     = $('#login-form');
-const loginInput    = $('#login');
-const passInput     = $('#password');
-const rememberInput = $('#remember');
-const loginError    = $('#login-error');
+  const articleSelect = $('articleSelect');
+  const contentId = $('contentId');
+  const loadBtn = $('loadBtn');
+  const status = $('status');
+  const viewsEl = $('views');
+  const hitsEl = $('hits');
+  const modeSel = $('mode');
+  const fixedInputs = $('fixedInputs');
+  const budgetInput = $('budgetInput');
+  const cpmHits = $('cpmHits');
+  const cpmViews = $('cpmViews');
+  const budget = $('budget');
+  const calcA = $('calcA');
+  const calcB = $('calcB');
+  const calcTitle = $('calcTitle');
+  const calcASub = $('calcASub');
+  const calcBSub = $('calcBSub');
 
-const logoutBtn     = $('#logout-btn');
-const statusLabel   = $('#status-label');
+  // конфиг
+  let CONFIG = { apiBase: '', mode: 'fixed', cpm: { hits: 500, views: 150 }, budget: 10000 };
 
-const addForm   = $('#add-form');
-const addBtn    = $('#add-btn');      // кнопка (type="button")
-const urlInput  = $('#article-url');
-const costInput = $('#article-cost');
-const addError  = $('#add-error');
-
-const dateFrom  = $('#date-from');
-const dateTo    = $('#date-to');
-const monthSel  = $('#month-select');
-const resetBtn  = $('#reset-filter-btn');
-
-const bodyEl    = $('#articles-body');
-
-const statCount  = $('#stat-count');
-const statOpens  = $('#stat-opens');
-const statBudget = $('#stat-budget');
-const statCpm    = $('#stat-cpm');
-
-function showLogin(){
-  adminSection.classList.add('hidden');
-  loginSection.classList.remove('hidden');
-  loginError.textContent = '';
-  loginInput.focus();
-}
-function showAdmin(){
-  loginSection.classList.add('hidden');
-  adminSection.classList.remove('hidden');
-}
-
-async function api(url, opts = {}) {
-  const headers = { 'Content-Type': 'application/json' };
-  const res = await fetch(url, { credentials: 'same-origin', headers, ...opts });
-  if (!res.ok) {
-    let text;
-    try { text = await res.json(); } catch { text = {}; }
-    throw new Error(text.error || `HTTP ${res.status}`);
+  function setStatus(kind, textHtml) {
+    status.className = `status ${kind}`;
+    status.innerHTML = textHtml;
   }
-  const ct = res.headers.get('content-type') || '';
-  return ct.includes('application/json') ? res.json() : res.text();
-}
 
-async function checkAuth() {
-  try {
-    const me = await api('/api/me');
-    if (me.auth) {
-      showAdmin();
-      await loadArticles();
+  function apiBase() {
+    const base = (CONFIG.apiBase || '').trim();
+    return base || ''; // свой же origin
+  }
+
+  function computeAndRender({ views, hits }) {
+    viewsEl.textContent = views == null ? '—' : nf.format(views);
+    hitsEl.textContent = hits == null ? '—' : nf.format(hits);
+
+    const v = Number(views || 0);
+    const h = Number(hits || 0);
+
+    if (modeSel.value === 'fixed') {
+      const cHits = Number(cpmHits.value || 0);
+      const cViews = Number(cpmViews.value || 0);
+      const costHits = h > 0 ? (h / 1000) * cHits : 0;
+      const costViews = v > 0 ? (v / 1000) * cViews : 0;
+      calcA.textContent = nf.format(Math.round(costHits * 100) / 100);
+      calcB.textContent = nf.format(Math.round(costViews * 100) / 100);
     } else {
-      showLogin();
+      const b = Number(budget.value || 0);
+      const eCPMHits = h > 0 ? (b / h) * 1000 : 0;
+      const eCPMViews = v > 0 ? (b / v) * 1000 : 0;
+      calcA.textContent = nf.format(Math.round(eCPMHits * 100) / 100);
+      calcB.textContent = nf.format(Math.round(eCPMViews * 100) / 100);
     }
-  } catch {
-    showLogin();
   }
-}
 
-// формат дат
-function formatDate(iso) {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  if (isNaN(d)) return iso;
-  return d.toLocaleDateString('ru-RU', { day:'2-digit', month:'2-digit', year:'numeric' });
-}
-function formatDateTime(iso) {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  if (isNaN(d)) return iso;
-  return d.toLocaleString('ru-RU', {
-    day:'2-digit', month:'2-digit', year:'numeric',
-    hour:'2-digit', minute:'2-digit'
-  });
-}
-function formatMoney(v) {
-  if (v == null) return '—';
-  return new Intl.NumberFormat('ru-RU').format(Math.round(v));
-}
-
-// спиннер у кнопок
-function setLoading(btn, on, label) {
-  if (!btn) return;
-  if (on) {
-    btn.dataset._oldHtml = btn.innerHTML;
-    btn.disabled = true;
-    btn.classList.add('btn--loading');
-    const text = label || btn.textContent || 'Загрузка...';
-    btn.innerHTML = `<span class="spinner"></span><span>${text}</span>`;
-  } else {
-    btn.innerHTML = btn.dataset._oldHtml || 'Готово';
-    btn.disabled = false;
-    btn.classList.remove('btn--loading');
-    delete btn.dataset._oldHtml;
-  }
-}
-
-function withinFilters(a) {
-  const from = dateFrom.value ? new Date(dateFrom.value) : null;
-  const to   = dateTo.value   ? new Date(dateTo.value)   : null;
-  const month = monthSel.value;
-
-  const pub = a.publishedAt ? new Date(a.publishedAt) : null;
-  if (from && pub && pub < new Date(from.getFullYear(), from.getMonth(), from.getDate())) return false;
-  if (to && pub && pub > new Date(to.getFullYear(), to.getMonth(), to.getDate(), 23, 59, 59, 999)) return false;
-  if (month !== 'all' && pub && (pub.getMonth()+1) !== Number(month)) return false;
-  return true;
-}
-
-function renderArticles(list) {
-  const filtered = list.filter(withinFilters);
-
-  let totalOpens = 0;
-  let totalCost = 0;
-  filtered.forEach(a => {
-    totalOpens += Number(a.opens || 0);
-    totalCost  += Number(a.cost  || 0);
-  });
-  const avgCpm = totalOpens > 0 ? Math.round((totalCost / totalOpens) * 1000) : null;
-
-  statCount.textContent  = filtered.length;
-  statOpens.textContent  = formatMoney(totalOpens);
-  statBudget.textContent = formatMoney(totalCost);
-  statCpm.textContent    = avgCpm != null ? formatMoney(avgCpm) : '—';
-
-  const rows = [];
-  filtered
-    .sort((a,b) => (b.publishedAt || '').localeCompare(a.publishedAt || ''))
-    .forEach(a => {
-      rows.push(`
-        <tr>
-          <td>${formatDate(a.publishedAt)}</td>
-          <td>${a.title ? a.title.replace(/</g,'&lt;') : '—'}</td>
-          <td><a href="${a.url}" target="_blank" rel="noopener">Открыть</a></td>
-          <td><span class="badge">${formatMoney(a.opens)}</span></td>
-          <td>${formatMoney(a.cost)}</td>
-          <td>${a.cpm != null ? formatMoney(a.cpm) : '—'}</td>
-          <td>${formatDateTime(a.updatedAt)}</td>
-          <td class="actions-cell">
-            <button class="btn btn--ghost" data-refresh="${a.id}">Обновить</button>
-            <button class="btn btn--danger" data-del="${a.id}">Удалить</button>
-          </td>
-        </tr>
-      `);
-    });
-
-  bodyEl.innerHTML = rows.join('') || `<tr><td colspan="8" style="color:#9aa7bf">Пока пусто</td></tr>`;
-
-  // handlers
-  $$('button[data-del]').forEach(btn => {
-    btn.onclick = async () => {
-      const id = Number(btn.getAttribute('data-del'));
-      try {
-        await api(`/api/articles/${id}`, { method: 'DELETE' });
-        await loadArticles();
-      } catch (e) {
-        alert(e.message || 'Не удалось удалить');
-      }
-    };
-  });
-  $$('button[data-refresh]').forEach(btn => {
-    btn.onclick = async () => {
-      const id = Number(btn.getAttribute('data-refresh'));
-      setLoading(btn, true, 'Обновление...');
-      try {
-        await api(`/api/articles/${id}/refresh`, { method: 'POST' });
-        await loadArticles();
-      } catch (e) {
-        alert(e.message || 'Не удалось обновить');
-      } finally {
-        setLoading(btn, false);
-      }
-    };
+  // переключение режима
+  modeSel.addEventListener('change', () => {
+    const isFixed = modeSel.value === 'fixed';
+    fixedInputs.style.display = isFixed ? 'flex' : 'none';
+    budgetInput.style.display = isFixed ? 'none' : 'flex';
+    if (isFixed) {
+      calcTitle.textContent = 'Стоимость по CPM (₽)';
+      calcASub.textContent = 'по открытиям';
+      calcBSub.textContent = 'по показам';
+    } else {
+      calcTitle.textContent = 'eCPM (₽ за 1000)';
+      calcASub.textContent = 'по открытиям';
+      calcBSub.textContent = 'по показам';
+    }
   });
 
-  statusLabel.textContent = `Всего в базе: ${list.length}`;
-}
-
-async function loadArticles() {
-  statusLabel.textContent = 'Загрузка…';
-  const data = await api('/api/articles');
-  window.__articles = data;
-  renderArticles(data);
-  statusLabel.textContent = `Всего в базе: ${data.length}`;
-}
-
-// Login
-loginForm.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  loginError.textContent = '';
+  // первичная загрузка конфигов/списка статей
   try {
-    await api('/api/login', {
-      method: 'POST',
-      body: JSON.stringify({
-        login: loginInput.value.trim(),
-        password: passInput.value,
-        remember: !!rememberInput.checked
-      })
+    const [cfgRes, listRes] = await Promise.all([
+      fetch('/config.json'),
+      fetch('/articles.json')
+    ]);
+    if (cfgRes.ok) CONFIG = await cfgRes.json();
+    const list = listRes.ok ? await listRes.json() : [];
+
+    // populate select
+    articleSelect.innerHTML = '';
+    list.forEach((a, i) => {
+      const opt = document.createElement('option');
+      opt.value = a.id;
+      opt.textContent = `${a.id} — ${a.title || ''}`;
+      if (i === 0) opt.selected = true;
+      articleSelect.appendChild(opt);
     });
-    await checkAuth();
-    loginForm.reset();
-  } catch (err) {
-    loginError.textContent = err.message || 'Ошибка входа';
+    if (list.length) contentId.value = list[0].id;
+
+    // apply config defaults
+    modeSel.value = CONFIG.mode || 'fixed';
+    cpmHits.value = CONFIG.cpm?.hits ?? 500;
+    cpmViews.value = CONFIG.cpm?.views ?? 150;
+    budget.value = CONFIG.budget ?? 10000;
+    modeSel.dispatchEvent(new Event('change'));
+  } catch (e) {
+    // не критично
   }
-});
 
-// Add article (кнопка, НЕ submit формы)
-addBtn.addEventListener('click', async () => {
-  addError.textContent = '';
-  try {
-    const url  = urlInput.value.trim();
-    const cost = Number(costInput.value);
-    if (!url) throw new Error('Укажите ссылку');
-    if (Number.isNaN(cost) || cost < 0) throw new Error('Некорректная стоимость');
+  // выбор из селекта заливает ID в поле
+  articleSelect.addEventListener('change', () => {
+    contentId.value = articleSelect.value;
+  });
 
-    setLoading(addBtn, true, 'Добавление...');
-    await api('/api/articles', {
-      method: 'POST',
-      body: JSON.stringify({ url, cost })
-    });
+  // Срабатываем с ПЕРВОГО нажатия
+  loadBtn.addEventListener('click', async () => {
+    loadBtn.disabled = true;
+    setStatus('muted', '<span class="spinner"></span> Ждем загрузки…');
 
-    urlInput.value = '';
-    costInput.value = '';
-    await loadArticles();
-  } catch (err) {
-    addError.textContent = err.message || 'Не удалось добавить';
-  } finally {
-    setLoading(addBtn, false);
-  }
-});
+    const id = contentId.value.trim();
+    if (!id) {
+      setStatus('err', 'Укажи content_id');
+      return;
+    }
 
-// Logout
-logoutBtn.addEventListener('click', async () => {
-  try { await api('/api/logout', { method: 'POST' }); } catch {}
-  await checkAuth();
-});
+    try {
+      const base = apiBase();
+      const url = `${base}/api/metrics?content_id=${encodeURIComponent(id)}`;
+      const r = await fetch(url);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const data = await r.json();
+      if (!data.ok) throw new Error(data.error || 'Неизвестная ошибка');
 
-// Filters
-[dateFrom, dateTo, monthSel].forEach(el => el.addEventListener('change', () => renderArticles(window.__articles || [])));
-resetBtn.addEventListener('click', () => {
-  dateFrom.value=''; dateTo.value=''; monthSel.value='all';
-  renderArticles(window.__articles || []);
-});
-
-// init
-window.addEventListener('load', checkAuth);
+      computeAndRender({ views: data.views, hits: data.hits });
+      setStatus('ok', 'Готово. Данные получены.');
+    } catch (e) {
+      setStatus('err', `Ошибка: ${e.message || e}`);
+    }
+  }, { once: true });
+})();
