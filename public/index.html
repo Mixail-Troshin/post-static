@@ -4,34 +4,37 @@
     <meta charset="utf-8" />
     <title>Post Static — трекер публикаций VC.ru</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <!-- Важно: относительные пути -->
- <link rel="stylesheet" href="/static/styles.css" type="text/css">
-<link rel="icon" href="data:,">
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="/static/styles.css">
   </head>
   <body>
     <div class="app">
       <header class="app-header">
         <h1>Post Static</h1>
-        <p class="subtitle">Трекер платных публикаций VC.ru</p>
+        <p class="subtitle">Трекер публикаций VC.ru</p>
       </header>
 
       <!-- ЛОГИН -->
       <section id="login-section" class="card card--narrow">
-        <h2>Вход в админку</h2>
+        <h2>Вход</h2>
         <form id="login-form" class="form form--vertical">
           <label class="form__field">
             <span>Логин</span>
-            <input id="login" type="text" autocomplete="username" placeholder="admin" required />
+            <input id="login" type="text" autocomplete="username" required />
           </label>
 
           <label class="form__field">
             <span>Пароль</span>
-            <input id="password" type="password" autocomplete="current-password" placeholder="••••••••" required />
+            <input id="password" type="password" autocomplete="current-password" required />
+          </label>
+
+          <label class="checkbox">
+            <input id="remember" type="checkbox" />
+            <span>Запомнить на 7 дней</span>
           </label>
 
           <button class="btn" type="submit">Войти</button>
           <p id="login-error" class="error"></p>
-          <p class="hint">Логин/пароль задаются в <code>config.json</code>.</p>
         </form>
       </section>
 
@@ -41,7 +44,7 @@
           <h2 class="toolbar__title">Админка статистики</h2>
           <div class="toolbar__right">
             <span id="status-label" class="status-label"></span>
-            <button id="logout-btn" class="btn btn--secondary">Выйти</button>
+            <button id="logout-btn" class="btn btn--ghost">Выйти</button>
           </div>
         </div>
 
@@ -53,14 +56,12 @@
               <span>Ссылка на публикацию VC.ru</span>
               <input id="article-url" type="url" placeholder="https://vc.ru/..." required />
             </label>
-
             <label class="form__field">
               <span>Стоимость размещения (₽)</span>
-              <input id="article-cost" type="number" min="0" step="1" placeholder="Например, 15000" required />
+              <input id="article-cost" type="number" min="0" step="1" placeholder="15000" required />
             </label>
-
             <div class="form__actions">
-              <button id="add-btn" class="btn" type="submit">Добавить и подтянуть статистику</button>
+              <button id="add-btn" class="btn" type="submit">Добавить</button>
             </div>
           </form>
           <p id="add-error" class="error"></p>
@@ -97,7 +98,7 @@
               </select>
             </label>
             <div class="form__actions">
-              <button id="reset-filter-btn" class="btn btn--secondary" type="button">Сбросить</button>
+              <button id="reset-filter-btn" class="btn btn--ghost" type="button">Сбросить</button>
             </div>
           </div>
         </section>
@@ -107,19 +108,19 @@
           <h3>Сводная статистика</h3>
           <div class="stats-grid">
             <div class="stat">
-              <div class="stat__label">Публикаций в выборке</div>
+              <div class="stat__label">Публикаций</div>
               <div id="stat-count" class="stat__value">0</div>
             </div>
             <div class="stat">
-              <div class="stat__label">Всего открытий поста</div>
+              <div class="stat__label">Всего открытий</div>
               <div id="stat-opens" class="stat__value">0</div>
             </div>
             <div class="stat">
-              <div class="stat__label">Общий бюджет (₽)</div>
+              <div class="stat__label">Бюджет (₽)</div>
               <div id="stat-budget" class="stat__value">0</div>
             </div>
             <div class="stat">
-              <div class="stat__label">Средний CPM (₽ за 1000)</div>
+              <div class="stat__label">Средний CPM (₽)</div>
               <div id="stat-cpm" class="stat__value">—</div>
             </div>
           </div>
@@ -132,12 +133,12 @@
             <table class="articles-table">
               <thead>
                 <tr>
-                  <th>Дата публикации</th>
+                  <th>Дата</th>
                   <th>Заголовок</th>
                   <th>Ссылка</th>
                   <th>Открытия</th>
-                  <th>Стоимость (₽)</th>
-                  <th>CPM (₽)</th>
+                  <th>Стоимость</th>
+                  <th>CPM</th>
                   <th></th>
                 </tr>
               </thead>
@@ -148,6 +149,6 @@
       </section>
     </div>
 
-   <script src="/static/app.js"></script>
+    <script src="/static/app.js"></script>
   </body>
 </html>
