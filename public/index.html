@@ -1,10 +1,12 @@
+<!doctype html>
 <html lang="ru">
   <head>
     <meta charset="utf-8" />
     <title>Post Static — трекер публикаций VC.ru</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <!-- Важно: относительный путь, чтобы работало под /post-static/ -->
+    <!-- Важно: относительные пути -->
     <link rel="stylesheet" href="style.css" />
+    <link rel="icon" href="data:," />
   </head>
   <body>
     <div class="app">
@@ -13,7 +15,7 @@
         <p class="subtitle">Трекер платных публикаций VC.ru</p>
       </header>
 
-      <!-- Экран логина -->
+      <!-- ЛОГИН -->
       <section id="login-section" class="card card--narrow">
         <h2>Вход в админку</h2>
         <form id="login-form" class="form form--vertical">
@@ -29,11 +31,11 @@
 
           <button class="btn" type="submit">Войти</button>
           <p id="login-error" class="error"></p>
-          <p class="hint">Логин/пароль задаются в <code>server.js</code> или через переменные окружения.</p>
+          <p class="hint">Логин/пароль задаются в <code>config.json</code>.</p>
         </form>
       </section>
 
-      <!-- Админка -->
+      <!-- АДМИНКА -->
       <section id="admin-section" class="hidden">
         <div class="toolbar card">
           <h2 class="toolbar__title">Админка статистики</h2>
@@ -146,7 +148,6 @@
       </section>
     </div>
 
-    <!-- Важно: относительный путь -->
     <script src="app.js"></script>
   </body>
 </html>
