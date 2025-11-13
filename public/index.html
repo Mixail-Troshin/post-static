@@ -7,71 +7,62 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <div id="app">
-
-    <!-- ЛОГИН -->
-    <section id="loginSection" class="card">
-      <h2>Вход</h2>
-      <div class="row">
+  <!-- Login screen -->
+  <section id="login" class="screen centered">
+    <div class="panel">
+      <h1>VC Metrics</h1>
+      <p class="muted">Вход в систему</p>
+      <div class="form">
         <label>E-mail</label>
-        <input id="loginEmail" type="email" placeholder="admin@local" />
-      </div>
-      <div class="row">
+        <input id="email" type="email" placeholder="admin@local" />
         <label>Пароль</label>
-        <input id="loginPass" type="password" placeholder="пароль" />
+        <input id="password" type="password" placeholder="••••••••" />
+        <button id="loginBtn" class="accent block">Войти</button>
+        <p id="loginErr" class="error"></p>
       </div>
-      <button id="loginBtn">Войти</button>
-      <p id="loginError" class="error"></p>
-    </section>
+    </div>
+  </section>
 
-    <!-- ОСНОВНОЕ ПРИЛОЖЕНИЕ -->
-    <section id="appSection" class="hidden">
-      <header class="header">
-        <div>
-          <strong>VC Metrics</strong>
-        </div>
-        <nav class="tabs">
-          <button class="tab active" data-tab="monitor">Мониторинг</button>
-          <button class="tab" data-tab="users" id="usersTab" title="Только для админа">Пользователи</button>
-          <button id="logoutBtn" class="secondary">Выход</button>
-        </nav>
-      </header>
+  <!-- App -->
+  <section id="app" class="screen hidden">
+    <header class="topbar">
+      <div class="brand">VC Metrics</div>
+      <nav class="tabs">
+        <button class="tab active" data-tab="monitor">Мониторинг</button>
+        <button class="tab" data-tab="settings" id="tabSettings">Настройки</button>
+        <button id="logout" class="ghost">Выход</button>
+      </nav>
+    </header>
 
+    <main class="container">
+      <!-- Мониторинг -->
       <div id="tab-monitor">
-        <div class="card">
-          <h3>Добавить статью</h3>
-          <div class="row">
-            <label>Ссылка на публикацию VC.ru</label>
-            <input id="addUrl" type="url" placeholder="https://vc.ru/.../2317921-title" />
+        <div class="panel">
+          <h2>Добавить статью</h2>
+          <div class="form-inline">
+            <input id="urlInput" type="url" placeholder="https://vc.ru/.../2317921-title" />
+            <button id="addBtn" class="accent">Добавить</button>
+            <span id="addMsg" class="muted"></span>
           </div>
-          <button id="addBtn">Добавить</button>
-          <span id="addStatus" class="muted"></span>
         </div>
 
-        <div class="card">
-          <div class="row space">
-            <h3>Список статей</h3>
-            <div>
-              <button id="refreshAllBtn" class="secondary">Обновить всё</button>
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Список статей</h2>
+            <div class="actions">
+              <button id="refreshAll" class="ghost">Обновить всё</button>
             </div>
           </div>
-          <div class="row">
-            <label>Стоимость размещения, ₽ (глобально)</label>
-            <input id="priceInput" type="number" min="0" />
-            <button id="savePriceBtn" class="secondary">Сохранить</button>
-            <span class="muted" id="priceHint"></span>
-          </div>
-
-          <div class="tableWrap">
-            <table id="articlesTable">
+          <div class="tablewrap">
+            <table id="table">
               <thead>
                 <tr>
                   <th>Дата</th>
                   <th>Заголовок</th>
                   <th>Открытия</th>
-                  <th>Показы в ленте</th>
-                  <th>CPM по открытиям</th>
-                  <th>CPM по показам</th>
+                  <th>Показы</th>
+                  <th>CPM (откр.)</th>
+                  <th>CPM (показы)</th>
                   <th>Обновлено</th>
                   <th></th>
                 </tr>
@@ -82,29 +73,22 @@
         </div>
       </div>
 
-      <div id="tab-users" class="hidden">
-        <div class="card">
-          <h3>Пользователи</h3>
-          <div class="row">
-            <label>E-mail нового пользователя</label>
-            <input id="newUserEmail" type="email" placeholder="user@example.com" />
-            <button id="addUserBtn">Добавить</button>
-            <span class="muted" id="addUserStatus"></span>
-          </div>
-          <div class="tableWrap">
-            <table id="usersTable">
-              <thead>
-                <tr><th>E-mail</th><th>Админ</th><th></th></tr>
-              </thead>
-              <tbody></tbody>
-            </table>
+      <!-- Настройки -->
+      <div id="tab-settings" class="hidden">
+        <div class="panel">
+          <h2>Стоимость размещения</h2>
+          <p class="muted">Используется для расчёта CPM.</p>
+          <div class="form-inline">
+            <input id="price" type="number" min="0" step="1" />
+            <button id="savePrice" class="accent">Сохранить</button>
+            <span id="priceMsg" class="muted"></span>
           </div>
         </div>
       </div>
+    </main>
+  </section>
 
-    </section>
-  </div>
-
+  <div id="toast" class="toast hidden"></div>
   <script src="app.js"></script>
 </body>
 </html>
