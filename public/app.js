@@ -47,24 +47,42 @@ async function guard() {
 }
 
 // ---- login/logout ----
-$("#loginBtn").onclick = async () => {
+// 👇 Перехватываем сабмит и НЕ даём странице перезагружаться
+$("#loginForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
   $("#loginErr").textContent = "";
+  const email = $("#email").value.trim();
+  const password = $("#password").value;
+
+  // защита от автозаполнения-пустышки в некоторых браузерах
+  if (!email || !password) {
+    $("#loginErr").textContent = "Введите e-mail и пароль";
+    return;
+  }
+
+  const btn = $("#loginBtn");
+  btn.disabled = true; btn.textContent = "Входим…";
   try {
     await api("/api/login", {
       method: "POST",
-      body: JSON.stringify({
-        email: $("#email").value.trim(),
-        password: $("#password").value
-      })
+      body: JSON.stringify({ email, password })
     });
     await guard();
-  } catch (e) {
-    $("#loginErr").textContent = e.message;
+  } catch (e2) {
+    $("#loginErr").textContent = e2.message;
+  } finally {
+    btn.disabled = false; btn.textContent = "Войти";
   }
-};
-$("#logout").onclick = async () => { await api("/api/logout", { method: "POST" }); location.reload(); };
+});
 
-// ---- data ----
+$("#logout").onclick = async () => {
+  await api("/api/logout", { method: "POST" });
+  // просто возвращаем на экран логина без полной перезагрузки
+  $("#app").classList.add("hidden");
+  $("#login").classList.remove("hidden");
+};
+
+// ---- data ---- (ниже без изменений)
 const state = { items: [], price: 0 };
 
 async function loadData() {
@@ -76,8 +94,7 @@ async function loadData() {
 }
 
 function renderTable() {
-  const tb = $("#table tbody");
-  tb.innerHTML = "";
+  const tb = $("#table tbody"); tb.innerHTML = "";
   for (const it of state.items) {
     const tr = document.createElement("tr");
     tr.innerHTML = `
@@ -97,8 +114,7 @@ function renderTable() {
 }
 
 $("#table").onclick = async (e) => {
-  const btn = e.target.closest("button");
-  if (!btn) return;
+  const btn = e.target.closest("button"); if (!btn) return;
   const id = btn.dataset.id;
 
   if (btn.dataset.act === "refresh") {
@@ -106,9 +122,7 @@ $("#table").onclick = async (e) => {
     try {
       const { item } = await api(`/api/articles/${id}/refresh`, { method: "PATCH" });
       const i = state.items.findIndex(x => String(x.id) === String(id));
-      state.items[i] = item;
-      renderTable();
-      showToast("Обновлено");
+      state.items[i] = item; renderTable(); showToast("Обновлено");
     } finally {
       btn.disabled = false; btn.textContent = "Обновить";
     }
@@ -118,20 +132,16 @@ $("#table").onclick = async (e) => {
     if (!confirm("Удалить статью из списка?")) return;
     await api(`/api/articles/${id}`, { method: "DELETE" });
     state.items = state.items.filter(x => String(x.id) !== String(id));
-    renderTable();
-    showToast("Удалено");
+    renderTable(); showToast("Удалено");
   }
 };
 
 $("#addBtn").onclick = async () => {
-  const url = $("#urlInput").value.trim();
-  if (!url) return;
+  const url = $("#urlInput").value.trim(); if (!url) return;
   $("#addMsg").textContent = "Добавляю…";
   try {
     await api("/api/articles", { method: "POST", body: JSON.stringify({ url }) });
-    $("#urlInput").value = "";
-    await loadData();
-    $("#addMsg").textContent = "Готово";
+    $("#urlInput").value = ""; await loadData(); $("#addMsg").textContent = "Готово";
   } catch (e) {
     $("#addMsg").textContent = "Ошибка: " + e.message;
   }
@@ -148,8 +158,7 @@ $("#savePrice").onclick = async () => {
   try {
     const val = Number($("#price").value || 0);
     await api("/api/admin/set-price", { method: "POST", body: JSON.stringify({ price: val }) });
-    state.price = val;
-    renderTable();
+    state.price = val; renderTable();
     $("#priceMsg").textContent = "Сохранено";
     setTimeout(() => $("#priceMsg").textContent = "", 1500);
   } catch (e) {
@@ -157,4 +166,5 @@ $("#savePrice").onclick = async () => {
   }
 };
 
+// старт
 guard();
