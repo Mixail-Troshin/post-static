@@ -184,6 +184,20 @@ input:focus,select:focus{
 
 .error{ color:#fca5a5; margin:8px 0 0; font-size:14px; }
 
+/* Spinner */
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinner{
+  width:16px; height:16px;
+  border:2px solid rgba(255,255,255,.35);
+  border-top-color:#fff;
+  border-radius:50%;
+  display:inline-block;
+  animation: spin .9s linear infinite;
+  vertical-align: -3px;
+  margin-right:8px;
+}
+.btn.btn--loading{ opacity:.85; pointer-events:none; }
+
 /* Mobile */
 @media (max-width:640px){
   .app{ padding:22px 10px 40px; }
