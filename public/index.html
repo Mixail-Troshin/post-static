@@ -13,7 +13,7 @@
       <h1>VC Metrics</h1>
       <p class="muted">Вход в систему</p>
           <!-- 👇 теперь это форма, чтобы корректно ловить Enter/автозаполнение -->
-      <form id="loginForm" class="form" autocomplete="on" novalidate>
+      <form id="loginForm" class="form" method="post" action="/api/login" autocomplete="on" novalidate>
         <label for="email">E-mail</label>
         <input id="email" name="email" type="email" placeholder="admin@local"
                autocomplete="username" required />
