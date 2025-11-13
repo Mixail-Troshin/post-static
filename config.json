@@ -1,0 +1,19 @@
+{
+  "jwtSecret": "change-me-please",
+  "placementPrice": 15000,
+  "smtp": {
+    "host": "",
+    "port": 465,
+    "secure": true,
+    "user": "",
+    "pass": "",
+    "from": ""
+  },
+  "users": [
+    {
+      "email": "admin@local",
+      "passwordHash": "$2b$12$bF9/3pVaCM6L8BGZokmM8ecGfiY/WcKoIa/jv03gRrBTr2VQkVb2C",
+      "isAdmin": true
+    }
+  ]
+}
