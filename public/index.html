@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <title>Статистика статей vc.ru</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="app-header">
+      <h1>Статистика статей vc.ru</h1>
+      <p>Учёт оплаченных публикаций и их охвата</p>
+    </header>
+
+    <section class="card">
+      <h2>Добавить статью</h2>
+      <form id="add-form">
+        <input
+          type="url"
+          id="article-url"
+          placeholder="Вставьте ссылку на публикацию vc.ru"
+          required
+        />
+        <button type="submit">Добавить статью</button>
+      </form>
+      <p id="form-message" class="message"></p>
+    </section>
+
+    <section class="card">
+      <div class="table-header">
+        <h2>Список статей</h2>
+        <button id="refresh-all">Обновить все</button>
+      </div>
+      <div class="summary">
+        <span>Всего статей: <strong id="total-articles">0</strong></span>
+        <span>Суммарные просмотры: <strong id="total-views">0</strong></span>
+      </div>
+      <div class="table-wrapper">
+        <table id="articles-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Заголовок</th>
+              <th>Ссылка</th>
+              <th>Дата публикации</th>
+              <th>Просмотры</th>
+              <th>Обновлено</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="articles-body">
+            <!-- строки подгружаются через JS -->
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
