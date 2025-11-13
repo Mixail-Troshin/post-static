@@ -32,10 +32,10 @@ try {
     dataDir: path.resolve(__dirname, userCfg.dataDir || DEFAULTS.dataDir)
   };
 } catch {
-  // оставляем дефолт
+  // оставим значения по умолчанию
 }
 
-// гарантируем наличие папок и файлов данных
+// гарантируем наличие папок/файлов данных
 await fs.mkdir(CONFIG.dataDir, { recursive: true });
 await fs.mkdir(path.join(CONFIG.dataDir, 'sessions'), { recursive: true });
 
@@ -81,23 +81,25 @@ async function fetchPostStats(url) {
 
   const title = $('h1').first().text().trim() || 'Без названия';
 
+  // ISO-дата публикации
   const timeEl = $('.content-header__date time').first();
   const publishedAt = timeEl.attr('datetime') || timeEl.text().trim() || null;
 
-  // Доступный на странице счётчик (берём как «открытия»)
+  // Доступный на странице счётчик (рядом с глазом) — используем как «открытия»
   const viewsText = $('.content-footer-button__label').first().text().trim();
   const opens = Number(viewsText.replace(/\s/g, '')) || 0;
 
   return { title, publishedAt, opens };
 }
 
+// ---------- приложение ----------
 const app = express();
 
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// ---------- сессии (файловый стор, без MemoryStore warning) ----------
+// сессии: файловый стор (без MemoryStore warning)
 app.use(
   session({
     store: new FileStore({
@@ -116,15 +118,12 @@ app.use(
   })
 );
 
-// ---------- СТАТИКА: ПЕРЕД API и Fallback ----------
+// СТАТИКА — обязательно ДО API и fallback
 const publicDir = path.join(__dirname, 'public');
+app.use(express.static(publicDir));                 // корень
+app.use('/post-static', express.static(publicDir)); // и под префиксом
 
-// отдать статику в корне
-app.use(express.static(publicDir));
-// и под префиксом /post-static (если открываешь по такому пути)
-app.use('/post-static', express.static(publicDir));
-
-// ---------- Авторизация ----------
+// авторизация
 function requireAuth(req, res, next) {
   if (req.session && req.session.auth) return next();
   return res.status(401).json({ error: 'Не авторизован' });
@@ -143,7 +142,7 @@ app.post('/api/logout', (req, res) => {
   req.session.destroy(() => res.json({ ok: true }));
 });
 
-// ---------- Статьи ----------
+// статьи
 app.get('/api/articles', requireAuth, async (_req, res) => {
   res.json(await loadArticles());
 });
@@ -191,18 +190,16 @@ app.delete('/api/articles/:id', requireAuth, async (req, res) => {
   res.json({ ok: true });
 });
 
-// ---------- health (опционально)
+// health (опционально)
 app.get('/health', (_req, res) => res.send('ok'));
 
-// ---------- SPA Fallback — САМЫЙ КОНЕЦ ----------
+// SPA fallback — САМЫЙ КОНЕЦ
 app.get('/', (_req, res) => {
   res.sendFile(path.join(publicDir, 'index.html'));
 });
-
 app.get('/post-static', (_req, res) => {
   res.sendFile(path.join(publicDir, 'index.html'));
 });
-
 app.get('/post-static/*', (_req, res) => {
   res.sendFile(path.join(publicDir, 'index.html'));
 });
