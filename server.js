@@ -12,13 +12,11 @@ process.on('unhandledRejection', e => console.error('UNHANDLED REJECTION:', e));
 process.on('uncaughtException', e => console.error('UNCAUGHT EXCEPTION:', e));
 
 const FileStore = FileStoreFactory(session);
-
-// --- paths ---
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const publicDir = path.join(__dirname, 'public');
 
-// --- config (опциональный config.json) ---
+// ---- config ----
 const DEFAULTS = {
   port: 3000,
   adminLogin: 'admin',
@@ -26,7 +24,6 @@ const DEFAULTS = {
   sessionSecret: 'post-static-secret',
   dataDir: path.join(__dirname, 'data')
 };
-
 let CONFIG = { ...DEFAULTS };
 try {
   const raw = await fs.readFile(path.join(__dirname, 'config.json'), 'utf-8');
@@ -34,7 +31,7 @@ try {
   CONFIG = { ...CONFIG, ...userCfg, dataDir: path.resolve(__dirname, userCfg.dataDir || DEFAULTS.dataDir) };
 } catch {}
 
-// --- ensure data + sessions (fallback в /tmp для Render) ---
+// ---- storage prep (fallback в /tmp на Render) ----
 async function ensureWritableDir(dir) {
   try {
     await fs.mkdir(dir, { recursive: true });
@@ -54,31 +51,19 @@ if (!(await ensureWritableDir(SESSIONS_DIR))) {
   await fs.mkdir(SESSIONS_DIR, { recursive: true });
 }
 
-const LEGACY_ARTICLES = path.join(__dirname, 'articles.json');
 const ARTICLES_FILE = path.join(CONFIG.dataDir, 'articles.json');
-try {
-  await fs.access(ARTICLES_FILE);
-} catch {
-  try {
-    const legacy = await fs.readFile(LEGACY_ARTICLES, 'utf-8');
-    await fs.writeFile(ARTICLES_FILE, legacy, 'utf-8');
-  } catch {
-    await fs.writeFile(ARTICLES_FILE, '[]', 'utf-8');
-  }
-}
+try { await fs.access(ARTICLES_FILE); }
+catch { await fs.writeFile(ARTICLES_FILE, '[]', 'utf-8'); }
 
 async function loadArticles() {
-  try {
-    return JSON.parse(await fs.readFile(ARTICLES_FILE, 'utf-8'));
-  } catch {
-    return [];
-  }
+  try { return JSON.parse(await fs.readFile(ARTICLES_FILE, 'utf-8')); }
+  catch { return []; }
 }
 async function saveArticles(list) {
   await fs.writeFile(ARTICLES_FILE, JSON.stringify(list, null, 2), 'utf-8');
 }
 
-// --- VC.ru parser ---
+// ---- VC.ru parser ----
 async function fetchPostStats(url) {
   const res = await fetch(url, {
     headers: {
@@ -94,14 +79,14 @@ async function fetchPostStats(url) {
   const timeEl = $('.content-header__date time').first();
   const publishedAt = timeEl.attr('datetime') || timeEl.text().trim() || null;
 
-  // видимый счётчик (берём «открытия» как основной охват)
+  // используем видимый счётчик «открытий» рядом с глазом
   const viewsText = $('.content-footer-button__label').first().text().trim();
   const opens = Number(viewsText.replace(/\s/g, '')) || 0;
 
   return { title, publishedAt, opens };
 }
 
-// --- app ---
+// ---- app ----
 const app = express();
 app.set('trust proxy', 1);
 
@@ -121,27 +106,24 @@ app.use(
     resave: false,
     saveUninitialized: false,
     cookie: {
-      // без maxAge по умолчанию → session cookie (до закрытия браузера)
+      // по умолчанию — только до закрытия браузера
       sameSite: 'lax',
       secure: false
     }
   })
 );
 
-// == СТАТИКА под /static ==
-app.use(
-  '/static',
-  express.static(publicDir, {
-    maxAge: '1h',
-    etag: true,
-    lastModified: true,
-    setHeaders: (res, filePath) => {
-      if (filePath.endsWith('.css')) res.setHeader('Content-Type', 'text/css; charset=utf-8');
-      if (filePath.endsWith('.js')) res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
-    }
-  })
-);
-// «предохранители» — прямые маршруты
+// ---- static (/static) ----
+app.use('/static', express.static(publicDir, {
+  maxAge: '1h',
+  etag: true,
+  lastModified: true,
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.css')) res.setHeader('Content-Type', 'text/css; charset=utf-8');
+    if (filePath.endsWith('.js'))  res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+  }
+}));
+// предохранители
 app.get('/static/styles.css', (req, res) => {
   res.type('text/css');
   res.sendFile(path.join(publicDir, 'styles.css'));
@@ -151,7 +133,7 @@ app.get('/static/app.js', (req, res) => {
   res.sendFile(path.join(publicDir, 'app.js'));
 });
 
-// == Auth ==
+// ---- auth ----
 function requireAuth(req, res, next) {
   if (req.session && req.session.auth) return next();
   return res.status(401).json({ error: 'Не авторизован' });
@@ -167,10 +149,8 @@ app.post('/api/login', (req, res) => {
     req.session.regenerate(err => {
       if (err) return res.status(500).json({ error: 'Ошибка сессии' });
       req.session.auth = true;
-
-      // remember? 7 дней, иначе — до закрытия браузера
       if (remember) {
-        req.session.cookie.maxAge = 7 * 24 * 60 * 60 * 1000;
+        req.session.cookie.maxAge = 7 * 24 * 60 * 60 * 1000; // 7 дней
       } else {
         delete req.session.cookie.maxAge;
         req.session.cookie.expires = false;
@@ -189,7 +169,7 @@ app.post('/api/logout', (req, res) => {
   });
 });
 
-// == Articles API ==
+// ---- API: articles ----
 app.get('/api/articles', requireAuth, async (_req, res) => {
   res.json(await loadArticles());
 });
@@ -200,7 +180,6 @@ app.post('/api/articles', requireAuth, async (req, res) => {
     if (!url || !/^https?:\/\//i.test(url)) {
       return res.status(400).json({ error: 'Неверная ссылка' });
     }
-
     const list = await loadArticles();
     const stats = await fetchPostStats(url);
 
@@ -209,11 +188,13 @@ app.post('/api/articles', requireAuth, async (req, res) => {
     const opens = stats.opens || 0;
     const cpm = opens > 0 ? Math.round((costNum / opens) * 1000) : null;
 
+    const nowIso = new Date().toISOString();
     const article = {
       id,
       url,
       title: stats.title,
-      publishedAt: stats.publishedAt,
+      publishedAt: stats.publishedAt, // дата публикации
+      updatedAt: nowIso,              // дата последнего обновления
       opens,
       cost: costNum,
       cpm
@@ -225,6 +206,33 @@ app.post('/api/articles', requireAuth, async (req, res) => {
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Не удалось добавить статью' });
+  }
+});
+
+// ручное обновление одной статьи (перетянуть свежие цифры и updatedAt)
+app.post('/api/articles/:id/refresh', requireAuth, async (req, res) => {
+  const id = Number(req.params.id);
+  const list = await loadArticles();
+  const idx = list.findIndex(a => a.id === id);
+  if (idx === -1) return res.status(404).json({ error: 'Статья не найдена' });
+
+  try {
+    const stats = await fetchPostStats(list[idx].url);
+    const opens = stats.opens || 0;
+    const cost = Number(list[idx].cost) || 0;
+    list[idx] = {
+      ...list[idx],
+      title: stats.title || list[idx].title,
+      publishedAt: stats.publishedAt || list[idx].publishedAt,
+      opens,
+      cpm: opens > 0 ? Math.round((cost / opens) * 1000) : null,
+      updatedAt: new Date().toISOString()
+    };
+    await saveArticles(list);
+    return res.json(list[idx]);
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: 'Не удалось обновить' });
   }
 });
 
@@ -240,19 +248,18 @@ app.delete('/api/articles/:id', requireAuth, async (req, res) => {
 // health
 app.get('/health', (_req, res) => res.send('ok'));
 
-// == SPA entry ==
+// SPA entry
 app.get(['/', '/post-static'], (_req, res) => {
   res.set('Cache-Control', 'no-store');
   res.sendFile(path.join(publicDir, 'index.html'));
 });
 
-// == SPA fallback (в самом конце!) ==
+// SPA fallback (в самом конце!)
 app.get(/^\/(post-static\/)?(?!api\/)(?!static\/)(?!.*\..*$).*/, (_req, res) => {
   res.set('Cache-Control', 'no-store');
   res.sendFile(path.join(publicDir, 'index.html'));
 });
 
-// start
 const PORT = Number(process.env.PORT) || CONFIG.port || 3000;
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server started on http://localhost:${PORT}`);
