@@ -21,6 +21,11 @@
           placeholder="Вставьте ссылку на публикацию vc.ru"
           required
         />
+        <input
+          type="text"
+          id="article-cost"
+          placeholder="Стоимость размещения, ₽"
+        />
         <button type="submit">Добавить статью</button>
       </form>
       <p id="form-message" class="message"></p>
@@ -52,8 +57,10 @@
 
       <div class="summary">
         <span>Статей в выборке: <strong id="total-articles">0</strong></span>
-        <span>Суммарные просмотры: <strong id="total-views">0</strong></span>
-        <span>Средние на статью: <strong id="avg-views">0</strong></span>
+        <span>Суммарные открытия: <strong id="total-views">0</strong></span>
+        <span>Суммарный бюджет: <strong id="total-cost">0</strong> ₽</span>
+        <span>CPM по выборке: <strong id="total-cpm">0</strong> ₽ / 1000 откр.</span>
+        <span>Средние открытия: <strong id="avg-views">0</strong></span>
       </div>
     </section>
 
@@ -70,7 +77,9 @@
               <th>Заголовок</th>
               <th>Ссылка</th>
               <th>Дата публикации</th>
-              <th>Просмотры</th>
+              <th>Открытия</th>
+              <th>Стоимость, ₽</th>
+              <th>CPM, ₽ / 1000 откр.</th>
               <th>Обновлено</th>
               <th></th>
             </tr>
