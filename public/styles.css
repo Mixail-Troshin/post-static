@@ -1,0 +1,39 @@
+:root {
+  --bg: #0f1420;
+  --card: #171e2c;
+  --text: #e7ecff;
+  --muted: #9bb0d0;
+  --accent: #6aa0ff;
+  --danger: #ff6b6b;
+  --border: #263047;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+a { color: var(--accent); text-decoration: none; }
+
+.header { display: flex; justify-content: space-between; align-items: center; padding: 16px; }
+.tabs { display: flex; gap: 8px; align-items: center; }
+.tab { background: transparent; color: var(--text); border: 1px solid var(--border); padding: 8px 12px; border-radius: 10px; cursor: pointer; }
+.tab.active { background: var(--accent); color: #061027; border-color: var(--accent); }
+button { background: var(--accent); color: #061027; border: none; border-radius: 10px; padding: 10px 14px; cursor: pointer; }
+button.secondary { background: transparent; color: var(--text); border: 1px solid var(--border); }
+button.danger { background: var(--danger); color: #1b0000; }
+button:disabled { opacity: .6; cursor: default; }
+
+#app { max-width: 1100px; margin: 0 auto; padding: 16px; }
+.card { background: var(--card); border: 1px solid var(--border); padding: 16px; border-radius: 16px; margin-bottom: 16px; }
+.row { display: flex; gap: 12px; align-items: center; margin: 10px 0; flex-wrap: wrap; }
+.row.space { justify-content: space-between; }
+label { min-width: 220px; color: var(--muted); }
+input { flex: 1; background: #0c1220; color: var(--text); border: 1px solid var(--border); padding: 10px 12px; border-radius: 10px; }
+
+.tableWrap { overflow: auto; border: 1px solid var(--border); border-radius: 12px; }
+table { width: 100%; border-collapse: collapse; }
+th, td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+th { text-align: left; color: var(--muted); font-weight: 600; }
+td.actions { white-space: nowrap; display: flex; gap: 6px; }
+
+.hidden { display: none; }
+.error { color: #ff7a7a; }
+.muted { color: var(--muted); }
