@@ -88,6 +88,23 @@ function formatMoney(v) {
   return new Intl.NumberFormat('ru-RU').format(Math.round(v));
 }
 
+// спиннер у кнопок
+function setLoading(btn, on, label) {
+  if (!btn) return;
+  if (on) {
+    btn.dataset._oldHtml = btn.innerHTML;
+    btn.disabled = true;
+    btn.classList.add('btn--loading');
+    const text = label || btn.textContent || 'Загрузка...';
+    btn.innerHTML = `<span class="spinner"></span><span>${text}</span>`;
+  } else {
+    btn.innerHTML = btn.dataset._oldHtml || 'Готово';
+    btn.disabled = false;
+    btn.classList.remove('btn--loading');
+    delete btn.dataset._oldHtml;
+  }
+}
+
 function withinFilters(a) {
   const from = dateFrom.value ? new Date(dateFrom.value) : null;
   const to   = dateTo.value   ? new Date(dateTo.value)   : null;
@@ -154,14 +171,14 @@ function renderArticles(list) {
   $$('button[data-refresh]').forEach(btn => {
     btn.onclick = async () => {
       const id = Number(btn.getAttribute('data-refresh'));
-      btn.disabled = true;
+      setLoading(btn, true, 'Обновление...');
       try {
         await api(`/api/articles/${id}/refresh`, { method: 'POST' });
         await loadArticles();
       } catch (e) {
         alert(e.message || 'Не удалось обновить');
       } finally {
-        btn.disabled = false;
+        setLoading(btn, false);
       }
     };
   });
@@ -170,9 +187,11 @@ function renderArticles(list) {
 }
 
 async function loadArticles() {
+  statusLabel.textContent = 'Загрузка…';
   const data = await api('/api/articles');
   window.__articles = data;
   renderArticles(data);
+  statusLabel.textContent = `Всего в базе: ${data.length}`;
 }
 
 // Login
@@ -204,6 +223,7 @@ addBtn.addEventListener('click', async () => {
     if (!url) throw new Error('Укажите ссылку');
     if (Number.isNaN(cost) || cost < 0) throw new Error('Некорректная стоимость');
 
+    setLoading(addBtn, true, 'Добавление...');
     await api('/api/articles', {
       method: 'POST',
       body: JSON.stringify({ url, cost })
@@ -214,6 +234,8 @@ addBtn.addEventListener('click', async () => {
     await loadArticles();
   } catch (err) {
     addError.textContent = err.message || 'Не удалось добавить';
+  } finally {
+    setLoading(addBtn, false);
   }
 });
 
