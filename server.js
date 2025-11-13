@@ -1,290 +1,181 @@
 import express from 'express';
+import session from 'express-session';
 import cors from 'cors';
 import fetch from 'node-fetch';
 import * as cheerio from 'cheerio';
-import fs from 'fs';
+import fs from 'fs/promises';
 import path from 'path';
-import cron from 'node-cron';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const app = express();
+// --- Конфиг ---
 const PORT = process.env.PORT || 3000;
-
+const ADMIN_LOGIN = process.env.ADMIN_LOGIN || 'admin';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'secret123';
 const ARTICLES_FILE = path.join(__dirname, 'articles.json');
 
-// =======================
-// Загрузка / сохранение
-// =======================
-
-function loadArticles() {
-  if (!fs.existsSync(ARTICLES_FILE)) {
-    fs.writeFileSync(ARTICLES_FILE, '[]', 'utf8');
-  }
-  const raw = fs.readFileSync(ARTICLES_FILE, 'utf8');
+// --- Вспомогательные функции работы с файлом ---
+async function loadArticles() {
   try {
-    const data = JSON.parse(raw);
-    return Array.isArray(data) ? data : [];
-  } catch (e) {
-    console.error('Ошибка парсинга articles.json, перезаписываю []', e);
-    fs.writeFileSync(ARTICLES_FILE, '[]', 'utf8');
+    const data = await fs.readFile(ARTICLES_FILE, 'utf-8');
+    return JSON.parse(data);
+  } catch (_) {
     return [];
   }
 }
 
-function saveArticles(articles) {
-  fs.writeFileSync(ARTICLES_FILE, JSON.stringify(articles, null, 2), 'utf8');
+async function saveArticles(articles) {
+  await fs.writeFile(ARTICLES_FILE, JSON.stringify(articles, null, 2), 'utf-8');
 }
 
-// =======================
-// Парсинг статьи vc.ru
-// =======================
-
-async function fetchArticleInfo(url) {
+// --- парсинг VC.ru (упрощённо: открытий == основной счётчик) ---
+async function fetchPostStats(url) {
   const res = await fetch(url, {
     headers: {
       'User-Agent':
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
-        '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119 Safari/537.36'
     }
   });
 
   if (!res.ok) {
-    throw new Error(`Failed to load page: ${res.status} ${res.statusText}`);
+    throw new Error(`Не удалось загрузить страницу, статус ${res.status}`);
   }
 
   const html = await res.text();
   const $ = cheerio.load(html);
 
-  // ---- Заголовок ----
-  const title =
-    $('meta[property="og:title"]').attr('content') ||
-    $('h1').first().text().trim() ||
-    'Без названия';
+  const title = $('h1').first().text().trim() || 'Без названия';
 
-  // ---- Дата ----
+  // дата публикации
   const timeEl = $('.content-header__date time').first();
-  const publishedDatetime = timeEl.attr('datetime') || '';
-  const publishedTitle = timeEl.attr('title') || timeEl.text().trim() || '';
-  const publishedAt = publishedTitle || publishedDatetime || '';
+  const datetimeAttr = timeEl.attr('datetime');
+  const publishedAt = datetimeAttr || timeEl.text().trim() || null;
 
-  // ---- Открытия страницы поста ----
-  let opens = 0;
-
-  // 1) Пробуем вытащить из блока модалки (если он есть в HTML)
-  try {
-    $('.post-stats__item').each((_, el) => {
-      const label = $(el).find('.post-stats__label').text().trim().toLowerCase();
-      if (label.includes('открытий страницы поста') || label === 'открытий') {
-        const valueText = $(el).find('.post-stats__value').text().trim();
-        const val = parseInt(valueText.replace(/[^\d]/g, ''), 10);
-        if (!Number.isNaN(val)) {
-          opens = val;
-        }
-      }
-    });
-  } catch (e) {
-    console.warn('Не удалось разобрать post-stats__item', e);
-  }
-
-  // 2) Если не нашли в модалке — пробуем JSON counters.views
-  if (!opens || Number.isNaN(opens)) {
-    try {
-      const countersMatch = html.match(
-        /"counters"\s*:\s*\{[^}]*"views"\s*:\s*(\d+)/m
-      );
-      if (countersMatch && countersMatch[1]) {
-        opens = parseInt(countersMatch[1], 10);
-      }
-    } catch (e) {
-      console.warn('Не удалось извлечь counters.views из HTML', e);
-    }
-  }
-
-  // 3) Fallback — .content-footer-button__label
-  if (!opens || Number.isNaN(opens)) {
-    let viewsText = $('.content-footer-button__label').first().text().trim();
-    const candidate = parseInt(viewsText.replace(/[^\d]/g, ''), 10);
-    if (!Number.isNaN(candidate)) {
-      opens = candidate;
-    } else {
-      opens = 0;
-    }
-  }
+  // основной счётчик просмотров (к сожалению, модальное окно со статистикой
+  // на бэке не видно, там JS, поэтому берём доступный счётчик)
+  const viewsText = $('.content-footer-button__label').first().text().trim();
+  const views = Number(viewsText.replace(/\s/g, '')) || 0;
 
   return {
     title,
     publishedAt,
-    publishedDatetime,
-    views: opens // views = "открытий страницы поста"
+    opens: views // используем как "открытия страницы поста"
   };
 }
 
-// =======================
-// Миддлвары + статика
-// =======================
+// --- Приложение ---
+const app = express();
 
 app.use(cors());
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+app.use(
+  session({
+    secret: process.env.SESSION_SECRET || 'vc-tracker-secret',
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 дней
+    }
+  })
+);
+
+// статика
 app.use(express.static(path.join(__dirname, 'public')));
 
-// =======================
-// API
-// =======================
+// --- middleware авторизации ---
+function requireAuth(req, res, next) {
+  if (req.session && req.session.auth) {
+    return next();
+  }
+  return res.status(401).json({ error: 'Не авторизован' });
+}
 
-// Получить все статьи
-app.get('/api/articles', (req, res) => {
-  const articles = loadArticles();
+// --- Auth API ---
+app.post('/api/login', (req, res) => {
+  const { login, password } = req.body;
+
+  if (login === ADMIN_LOGIN && password === ADMIN_PASSWORD) {
+    req.session.auth = true;
+    return res.json({ ok: true });
+  }
+
+  return res.status(401).json({ error: 'Неверный логин или пароль' });
+});
+
+app.post('/api/logout', (req, res) => {
+  req.session.destroy(() => {
+    res.json({ ok: true });
+  });
+});
+
+// --- Articles API ---
+// получить все статьи
+app.get('/api/articles', requireAuth, async (req, res) => {
+  const articles = await loadArticles();
   res.json(articles);
 });
 
-// Добавить новую статью
-app.post('/api/articles', async (req, res) => {
-  const { url } = req.body;
-  let { cost } = req.body;
-
-  if (!url) {
-    return res.status(400).json({ error: 'url is required' });
-  }
-
-  // приводим cost к числу
-  if (typeof cost === 'string') {
-    cost = parseFloat(cost.replace(',', '.'));
-  }
-  if (typeof cost !== 'number' || Number.isNaN(cost)) {
-    cost = null;
-  }
-
+// добавить статью
+app.post('/api/articles', requireAuth, async (req, res) => {
   try {
-    const articles = loadArticles();
+    const { url, cost } = req.body;
 
-    if (articles.find((a) => a.url === url)) {
-      return res.status(400).json({ error: 'Эта статья уже есть в списке' });
+    if (!url || !url.startsWith('http')) {
+      return res.status(400).json({ error: 'Неверная ссылка' });
     }
 
-    const info = await fetchArticleInfo(url);
+    const articles = await loadArticles();
+    const stats = await fetchPostStats(url);
 
-    const newArticle = {
-      id: Date.now().toString(),
+    const id = articles.length ? Math.max(...articles.map(a => a.id)) + 1 : 1;
+    const costNum = Number(cost) || 0;
+    const opens = stats.opens || 0;
+    const cpm = opens > 0 ? Math.round((costNum / opens) * 1000) : null;
+
+    const article = {
+      id,
       url,
-      title: info.title,
-      publishedAt: info.publishedAt,
-      publishedDatetime: info.publishedDatetime,
-      views: info.views,
-      cost, // стоимость размещения (руб), может быть null
-      lastUpdated: new Date().toISOString()
+      title: stats.title,
+      publishedAt: stats.publishedAt,
+      opens,
+      cost: costNum,
+      cpm
     };
 
-    articles.push(newArticle);
-    saveArticles(articles);
+    articles.push(article);
+    await saveArticles(articles);
 
-    res.json(newArticle);
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Не удалось получить данные статьи' });
-  }
-});
-
-// Обновить одну статью
-app.post('/api/articles/:id/refresh', async (req, res) => {
-  const { id } = req.params;
-  const articles = loadArticles();
-  const article = articles.find((a) => a.id === id);
-
-  if (!article) {
-    return res.status(404).json({ error: 'Статья не найдена' });
-  }
-
-  try {
-    const info = await fetchArticleInfo(article.url);
-
-    article.title = info.title;
-    article.publishedAt = info.publishedAt;
-    article.publishedDatetime = info.publishedDatetime;
-    article.views = info.views;
-    article.lastUpdated = new Date().toISOString();
-    // cost НЕ трогаем
-
-    saveArticles(articles);
     res.json(article);
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Не удалось обновить статью' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Не удалось добавить статью' });
   }
 });
 
-// Обновить все статьи
-app.post('/api/refresh-all', async (req, res) => {
-  const articles = loadArticles();
-  let updated = 0;
+// удалить статью
+app.delete('/api/articles/:id', requireAuth, async (req, res) => {
+  const id = Number(req.params.id);
+  const articles = await loadArticles();
+  const filtered = articles.filter(a => a.id !== id);
 
-  for (const article of articles) {
-    try {
-      const info = await fetchArticleInfo(article.url);
-
-      article.title = info.title;
-      article.publishedAt = info.publishedAt;
-      article.publishedDatetime = info.publishedDatetime;
-      article.views = info.views;
-      article.lastUpdated = new Date().toISOString();
-      // cost не трогаем
-
-      updated++;
-    } catch (e) {
-      console.error(`Failed to refresh ${article.url}`, e);
-    }
-  }
-
-  saveArticles(articles);
-  res.json({ updated, total: articles.length });
-});
-
-// Удалить статью
-app.delete('/api/articles/:id', (req, res) => {
-  const { id } = req.params;
-  const articles = loadArticles();
-  const index = articles.findIndex((a) => a.id === id);
-
-  if (index === -1) {
+  if (filtered.length === articles.length) {
     return res.status(404).json({ error: 'Статья не найдена' });
   }
 
-  const deleted = articles.splice(index, 1)[0];
-  saveArticles(articles);
-  res.json({ success: true, deleted });
+  await saveArticles(filtered);
+  res.json({ ok: true });
 });
 
-// =======================
-// CRON — ежедневное обновление
-// =======================
-
-cron.schedule('0 3 * * *', async () => {
-  console.log('Running daily refresh job...');
-  const articles = loadArticles();
-
-  for (const article of articles) {
-    try {
-      const info = await fetchArticleInfo(article.url);
-      article.title = info.title;
-      article.publishedAt = info.publishedAt;
-      article.publishedDatetime = info.publishedDatetime;
-      article.views = info.views;
-      article.lastUpdated = new Date().toISOString();
-    } catch (e) {
-      console.error(`Failed to refresh ${article.url}`, e);
-    }
-  }
-
-  saveArticles(articles);
-  console.log('Daily refresh finished');
+// SPA-фоллбек
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// =======================
-// Старт сервера
-// =======================
-
-app.listen(PORT, () => {
+// --- start ---
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server started on http://localhost:${PORT}`);
 });
